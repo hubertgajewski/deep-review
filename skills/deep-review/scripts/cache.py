@@ -538,10 +538,13 @@ def command_state(args: argparse.Namespace) -> None:
             reuse_used = False
             targeted_rerun_used = False
         else:
-            new_sequence = (
+            reviewed_state_changed = (
                 prior is not None
-                and prior["status"] == "ready"
                 and prior["reviewed_state_hash"] != args.reviewed_state_hash
+            )
+            new_sequence = (
+                reviewed_state_changed
+                and (prior["status"] == "ready" or prior["iteration"] == 3)
             )
             if prior is None or new_sequence:
                 iteration = 1

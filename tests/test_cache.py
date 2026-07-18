@@ -417,12 +417,14 @@ class CacheStorageTests(unittest.TestCase):
         unchanged = advance(digest("one"))
         second = advance(digest("two"))
         third = advance(digest("three"))
+        unchanged_at_cap = advance(digest("three"))
+        restarted = advance(digest("four"))
         self.assertEqual(first["iteration"], 1)
         self.assertEqual(unchanged["iteration"], 1)
         self.assertEqual(second["iteration"], 2)
         self.assertEqual(third["iteration"], 3)
-        with self.assertRaises(CACHE.CacheError):
-            advance(digest("four"))
+        self.assertEqual(unchanged_at_cap["iteration"], 3)
+        self.assertEqual(restarted["iteration"], 1)
 
         (self.cache_dir / "state.json").write_text("{broken", encoding="utf-8")
         with self.assertRaises(CACHE.CacheError):
@@ -512,6 +514,58 @@ class CacheStorageTests(unittest.TestCase):
         self.assertEqual(ready["iteration"], 3)
         self.assertEqual(restarted["iteration"], 1)
         self.assertEqual(advanced["iteration"], 2)
+
+    def test_changed_state_after_exhausted_sequence_starts_a_new_sequence(self) -> None:
+        first = self.advance_state(digest("first"), reuse_used=True)
+        second = self.advance_state(digest("second"), targeted_rerun_used=True)
+        third = self.advance_state(digest("third"), status="incomplete")
+
+        agent_dir = self.cache_dir / "agents"
+        agent_dir.mkdir()
+        cached_result = agent_dir / "code.json"
+        cached_result.write_text('{"preserved": true}\n', encoding="utf-8")
+
+        restarted = self.advance_state(digest("fixed"), status="blocked")
+
+        self.assertEqual(first["iteration"], 1)
+        self.assertEqual(second["iteration"], 2)
+        self.assertEqual(third["iteration"], 3)
+        self.assertEqual(restarted["iteration"], 1)
+        self.assertFalse(restarted["reuse_used"])
+        self.assertFalse(restarted["targeted_rerun_used"])
+        self.assertEqual(cached_result.read_text(encoding="utf-8"), '{"preserved": true}\n')
+
+    def test_exhausted_sequence_rolls_over_across_process_invocations(self) -> None:
+        command = [
+            sys.executable,
+            str(CACHE_PATH),
+            "state",
+            "--repo-root",
+            str(self.root),
+            "--cache-dir",
+            ".deep-review-cache",
+            "--scope-key",
+            digest("scope-key"),
+            "--status",
+            "blocked",
+        ]
+        generation: int | None = None
+        iterations = []
+        for reviewed in ("first", "second", "third", "fixed"):
+            arguments = [*command, "--reviewed-state-hash", digest(reviewed)]
+            if generation is not None:
+                arguments.extend(("--expected-generation", str(generation)))
+            completed = subprocess.run(
+                arguments,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            state = json.loads(completed.stdout)
+            iterations.append(state["iteration"])
+            generation = state["generation"]
+
+        self.assertEqual(iterations, [1, 2, 3, 1])
 
     def test_state_read_requires_scope_for_multiple_records(self) -> None:
         self.advance_state(digest("a-one"), scope="scope-a")

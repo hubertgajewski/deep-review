@@ -86,7 +86,9 @@ Persist at most 64 records keyed by scope identity, with reviewed-state hash, it
 - identical reviewed-state hash: keep iteration
 - changed reviewed-state hash: increment once
 - changed reviewed-state hash after `ready`: start a new sequence at iteration 1
-- refuse to advance above 3
+- an iteration-3 `blocked` or `incomplete` result ends the current sequence; stop and return control to the caller
+- a later explicit invocation with a changed reviewed-state hash after an iteration-3 result starts a new sequence at iteration 1
+- an identical reviewed-state hash at iteration 3 keeps iteration 3 and may re-emit validated cached blockers without another model call
 - reuse and targeted-rerun flags accumulate monotonically for the sequence
 - every state write advances a per-scope generation
 - every update to an existing scope requires `--expected-generation <observed>`
@@ -94,6 +96,7 @@ Persist at most 64 records keyed by scope identity, with reviewed-state hash, it
 - a generation mismatch invalidates the completed review result and requires a rebuilt scope; a guard hash mismatch requires a rebuilt fresh guard
 
 Blocking output is not reusable after a state change. It may be re-emitted for an identical state to avoid a no-value model call.
+Starting a new sequence resets only its iteration and guard-history flags. It does not clear agent-result records; independently eligible nonblocking results remain available under the normal complete-key checks.
 
 ## Final guard
 
