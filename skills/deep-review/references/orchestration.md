@@ -66,16 +66,30 @@ dependencies: sorted path and content-hash pairs
 
 Use empty strings for non-applicable remote fields. Never omit required names. Compute SHA-256 over canonical UTF-8 JSON.
 
+Build the convergence `scope_key` only from stable request identity:
+
+- every mode: repository identity, mode, and reviewer-focus hash;
+- remote: provider, host, and change number;
+- path: canonical repository-relative path selector;
+- base/range: normalized validated selectors and range operator;
+- local: no additional selector.
+
+Exclude base/head revisions, diff and description hashes, untracked identities, bucket coverage, and effective full-review state from `scope_key`; include all changing reviewed content in `reviewed_state_hash`. This keeps one fix/review sequence stable while its reviewed state changes.
+
 Persist one latest record per agent. A record stores the key, classification (`nonblocking`, `blocking`, or `incomplete`), iteration, result body, summary counts, and timestamp. It never stores raw scope input separately.
 
-The record also stores the validated canonical key manifest, including its sorted dependency identities. On a later invocation, use `cache.py probe` to obtain only a structurally and schema-validated prior manifest, re-hash its dependency paths at the current reviewed state, construct the complete candidate key, and use `cache.py lookup` for an exact match. Treat exit code 3 as a miss. Treat corrupt, unreadable, or unwritable cache as unavailable and run required agents fresh; keep the current invocation's iteration state in memory.
+The record also stores the validated canonical key manifest, including its sorted dependency identities. On a later invocation, use `cache.py probe` to obtain only a structurally and schema-validated prior manifest, re-hash its dependency paths from the immutable reviewed-head context rather than the caller's checkout, construct the complete candidate key, and use `cache.py lookup` for an exact match. Treat exit code 3 as a miss. Treat corrupt, unreadable, or unwritable cache as unavailable and run required agents fresh; keep the current invocation's iteration state in memory.
 
-Persist scope state with scope identity, reviewed-state hash, iteration, last aggregate status, and whether reuse or targeted reruns occurred. Rules:
+Persist at most 64 records keyed by scope identity, with reviewed-state hash, iteration, generation, last aggregate status, and whether reuse or targeted reruns occurred. `cache.py` serializes each read-modify-write transition under a cross-platform lock. When capacity is reached, evict only the least-recently-updated `ready` record; never evict `blocked` or `incomplete` state. If no completed record is evictable, disable persistence for the new scope and keep its state in memory. Pass `--scope-key` to `state-read` when more than one record exists. Rules:
 
 - new scope: iteration 1
 - identical reviewed-state hash: keep iteration
 - changed reviewed-state hash: increment once
 - refuse to advance above 3
+- reuse and targeted-rerun flags accumulate monotonically for the sequence
+- every state write advances a per-scope generation
+- only `state --final-guard-run --expected-generation <observed>` clears guard flags
+- a generation mismatch invalidates the guard and requires a rebuilt fresh guard
 
 Blocking output is not reusable after a state change. It may be re-emitted for an identical state to avoid a no-value model call.
 

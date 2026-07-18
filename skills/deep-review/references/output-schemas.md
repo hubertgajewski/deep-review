@@ -39,13 +39,13 @@ Then emit:
 summary: <N> pass / <N> fail / <N> N/A
 ```
 
-When failures exist, append a prioritized numbered list of actionable `file:line` failures. Otherwise append exactly:
+When failures exist, append exactly one prioritized, consecutively numbered, repository-relative `file:line` action per failed checklist item, in failed-item order. Otherwise append exactly:
 
 ```text
 Failures: none.
 ```
 
-Only `fail` blocks by default. Recount the body; drift is malformed output.
+Only `fail` blocks by default. In global `blocking_levels`, checklist `fail` is represented by the canonical token `CHECKLIST_FAIL`; extension frontmatter continues to use its schema-native value `fail`. Recount the body and action list; drift is malformed output.
 
 ## Non-result states
 

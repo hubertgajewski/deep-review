@@ -123,6 +123,8 @@ class ResultValidationTests(unittest.TestCase):
 
     def test_hml_rejects_summary_drift_and_prose(self) -> None:
         with self.assertRaises(CACHE.CacheError):
+            CACHE.validate_hml("summary: 0 high / 0 medium / 0 low\n")
+        with self.assertRaises(CACHE.CacheError):
             CACHE.validate_hml("findings: none\nsummary: 1 high / 0 medium / 0 low\n")
         with self.assertRaises(CACHE.CacheError):
             CACHE.validate_hml("Looks good\nsummary: 0 high / 0 medium / 0 low\n")
@@ -147,6 +149,23 @@ class ResultValidationTests(unittest.TestCase):
     def test_checklist_requires_exact_empty_sentinel(self) -> None:
         with self.assertRaises(CACHE.CacheError):
             CACHE.validate_checklist("summary: 0 pass / 0 fail / 0 N/A\nNo failures.\n")
+
+    def test_checklist_requires_one_safe_location_per_failure(self) -> None:
+        prefix = "- [fail] docs: config is undocumented\nsummary: 0 pass / 1 fail / 0 N/A\n"
+        invalid_tails = (
+            "Failures (in order of priority):\n",
+            "Failures (in order of priority):\n1. explain the failure\n",
+            "Failures (in order of priority):\n1. ../outside.md:1 fix it\n",
+            "Failures (in order of priority):\n2. docs/config.md:1 fix it\n",
+            (
+                "Failures (in order of priority):\n"
+                "1. docs/config.md:1 fix it\n"
+                "2. docs/other.md:1 extra action\n"
+            ),
+        )
+        for tail in invalid_tails:
+            with self.subTest(tail=tail), self.assertRaises(CACHE.CacheError):
+                CACHE.validate_checklist(prefix + tail)
 
 
 class CacheStorageTests(unittest.TestCase):
@@ -340,21 +359,36 @@ class CacheStorageTests(unittest.TestCase):
             with self.assertRaisesRegex(CACHE.CacheError, "cannot prepare atomic write"):
                 CACHE.atomic_write(target, {"value": 1})
 
+    def advance_state(
+        self,
+        reviewed: str,
+        *,
+        scope: str = "scope-key",
+        reuse_used: bool = False,
+        targeted_rerun_used: bool = False,
+        final_guard_run: bool = False,
+        expected_generation: int | None = None,
+        status: str = "blocked",
+    ) -> dict[str, object]:
+        output = io.StringIO()
+        args = argparse.Namespace(
+            repo_root=str(self.root),
+            cache_dir=".deep-review-cache",
+            scope_key=digest(scope),
+            reviewed_state_hash=reviewed,
+            status=status,
+            reuse_used=reuse_used,
+            targeted_rerun_used=targeted_rerun_used,
+            final_guard_run=final_guard_run,
+            expected_generation=expected_generation,
+        )
+        with redirect_stdout(output):
+            CACHE.command_state(args)
+        return json.loads(output.getvalue())
+
     def test_state_counts_only_changed_reviewed_state(self) -> None:
         def advance(reviewed: str) -> dict[str, object]:
-            output = io.StringIO()
-            args = argparse.Namespace(
-                repo_root=str(self.root),
-                cache_dir=".deep-review-cache",
-                scope_key=digest("scope-key"),
-                reviewed_state_hash=reviewed,
-                status="blocked",
-                reuse_used=False,
-                targeted_rerun_used=False,
-            )
-            with redirect_stdout(output):
-                CACHE.command_state(args)
-            return json.loads(output.getvalue())
+            return self.advance_state(reviewed)
 
         first = advance(digest("one"))
         unchanged = advance(digest("one"))
@@ -370,6 +404,148 @@ class CacheStorageTests(unittest.TestCase):
         (self.cache_dir / "state.json").write_text("{broken", encoding="utf-8")
         with self.assertRaises(CACHE.CacheError):
             advance(digest("five"))
+
+    def test_state_preserves_interleaved_scopes(self) -> None:
+        first_a = self.advance_state(digest("a-one"), scope="scope-a")
+        first_b = self.advance_state(digest("b-one"), scope="scope-b")
+        second_a = self.advance_state(digest("a-two"), scope="scope-a")
+        self.assertEqual(first_a["iteration"], 1)
+        self.assertEqual(first_b["iteration"], 1)
+        self.assertEqual(second_a["iteration"], 2)
+
+        state_path = self.cache_dir / "state.json"
+        states = CACHE.read_scope_states(state_path)
+        self.assertEqual(set(states), {digest("scope-a"), digest("scope-b")})
+
+    def test_state_accumulates_guard_history_until_guard_runs(self) -> None:
+        first = self.advance_state(digest("one"), reuse_used=True)
+        second = self.advance_state(digest("one"), targeted_rerun_used=True)
+        self.assertTrue(first["reuse_used"])
+        self.assertTrue(second["reuse_used"])
+        self.assertTrue(second["targeted_rerun_used"])
+
+        guarded = self.advance_state(
+            digest("one"), final_guard_run=True, expected_generation=second["generation"]
+        )
+        self.assertFalse(guarded["reuse_used"])
+        self.assertFalse(guarded["targeted_rerun_used"])
+
+    def test_final_guard_rejects_stale_generation(self) -> None:
+        observed = self.advance_state(digest("one"), reuse_used=True)
+        self.advance_state(digest("one"), targeted_rerun_used=True)
+        with self.assertRaisesRegex(CACHE.CacheError, "changed during final guard"):
+            self.advance_state(
+                digest("one"),
+                final_guard_run=True,
+                expected_generation=observed["generation"],
+            )
+
+    def test_state_read_requires_scope_for_multiple_records(self) -> None:
+        self.advance_state(digest("a-one"), scope="scope-a")
+        self.advance_state(digest("b-one"), scope="scope-b")
+        with self.assertRaises(CACHE.CacheError):
+            CACHE.command_state_read(
+                argparse.Namespace(
+                    repo_root=str(self.root), cache_dir=".deep-review-cache", scope_key=None
+                )
+            )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            CACHE.command_state_read(
+                argparse.Namespace(
+                    repo_root=str(self.root),
+                    cache_dir=".deep-review-cache",
+                    scope_key=digest("scope-b"),
+                )
+            )
+        self.assertEqual(json.loads(output.getvalue())["scope_key"], digest("scope-b"))
+
+    def test_concurrent_scope_updates_do_not_lose_records(self) -> None:
+        processes = []
+        for index in range(8):
+            processes.append(
+                subprocess.Popen(
+                    [
+                        sys.executable,
+                        str(CACHE_PATH),
+                        "state",
+                        "--repo-root",
+                        str(self.root),
+                        "--cache-dir",
+                        ".deep-review-cache",
+                        "--scope-key",
+                        digest(f"concurrent-scope-{index}"),
+                        "--reviewed-state-hash",
+                        digest(f"concurrent-state-{index}"),
+                        "--status",
+                        "blocked",
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            )
+        completed = [process.communicate(timeout=10) for process in processes]
+        self.assertEqual([process.returncode for process in processes], [0] * len(processes), completed)
+        states = CACHE.read_scope_states(self.cache_dir / "state.json")
+        self.assertEqual(len(states), len(processes))
+
+    def test_legacy_single_scope_state_is_migrated(self) -> None:
+        legacy = {
+            "schema_version": 1,
+            "scope_key": digest("legacy-scope"),
+            "reviewed_state_hash": digest("legacy-state"),
+            "iteration": 2,
+            "status": "blocked",
+            "reuse_used": True,
+            "targeted_rerun_used": False,
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        }
+        CACHE.atomic_write(self.cache_dir / "state.json", legacy)
+        current = self.advance_state(digest("current-state"), scope="current-scope")
+        states = CACHE.read_scope_states(self.cache_dir / "state.json")
+        self.assertEqual(current["iteration"], 1)
+        self.assertEqual(set(states), {digest("legacy-scope"), digest("current-scope")})
+        self.assertEqual(states[digest("legacy-scope")]["generation"], 1)
+
+    def test_scope_capacity_evicts_only_completed_reviews(self) -> None:
+        self.advance_state(digest("ready-state"), scope="ready-scope", status="ready")
+        for index in range(CACHE.MAX_SCOPE_STATES - 1):
+            self.advance_state(digest(f"blocked-state-{index}"), scope=f"blocked-scope-{index}")
+        self.advance_state(digest("new-state"), scope="new-scope")
+        states = CACHE.read_scope_states(self.cache_dir / "state.json")
+        self.assertEqual(len(states), CACHE.MAX_SCOPE_STATES)
+        self.assertNotIn(digest("ready-scope"), states)
+
+    def test_scope_capacity_preserves_unfinished_reviews(self) -> None:
+        for index in range(CACHE.MAX_SCOPE_STATES):
+            self.advance_state(digest(f"state-{index}"), scope=f"scope-{index}")
+        with self.assertRaisesRegex(CACHE.CacheError, "capacity is exhausted"):
+            self.advance_state(digest("overflow"), scope="overflow")
+
+    def test_windows_lock_backend_is_selected_without_fcntl(self) -> None:
+        class FakeMsvcrt:
+            LK_LOCK = 1
+            LK_UNLCK = 2
+
+            def __init__(self) -> None:
+                self.calls: list[tuple[int, int]] = []
+
+            def locking(self, _descriptor: int, mode: int, size: int) -> None:
+                self.calls.append((mode, size))
+
+        backend = FakeMsvcrt()
+        with (
+            mock.patch.object(CACHE, "_fcntl", None),
+            mock.patch.object(CACHE, "_msvcrt", backend),
+            CACHE.cache_lock(self.cache_dir, "windows-test"),
+        ):
+            pass
+        self.assertEqual(backend.calls, [(backend.LK_LOCK, 1), (backend.LK_UNLCK, 1)])
+
+    def test_private_descriptor_mode_is_optional(self) -> None:
+        with mock.patch.object(CACHE.os, "fchmod", None):
+            CACHE.set_private_descriptor_mode(123)
 
     def test_clear_removes_only_validated_cache_directory(self) -> None:
         marker = self.root / "keep.txt"

@@ -54,7 +54,7 @@ A provider adapter owns only remote selection, metadata retrieval, drift lookup,
 
 Resolve the canonical repository root and target. Require the target to equal the root or remain beneath it after symlink resolution. Reject external symlink targets and denied components before reading.
 
-For a directory, enumerate regular files in stable repository-relative order. Do not follow directory symlinks. Respect Git ignore rules unless trusted configuration explicitly includes ignored paths. Report and skip binaries.
+For a directory, enumerate regular files in stable repository-relative order. Do not follow directory symlinks. Respect Git ignore rules unless trusted committed policy explicitly includes ignored paths. Report and skip binaries.
 
 Represent each text file as an added synthetic hunk:
 
@@ -73,6 +73,12 @@ Validate every revision with `git rev-parse --verify --quiet <value>^{commit}`. 
 
 Use `git diff <validated-range>`, passing the validated range as one quoted argument. Never use `git diff --quiet` as revision validation because exit code 1 normally means differences exist.
 
+## Immutable review context
+
+Before dispatch, materialize one stable snapshot root for the normalized reviewed state. Local mode snapshots committed `HEAD` plus the captured staged, unstaged, and safe untracked content. Path mode snapshots the enumerated synthetic-hunk inputs and committed-`HEAD` surrounding context. Ref/range and remote modes materialize the exact reviewed `head_identity` in a temporary detached worktree and verify its `HEAD`; fetch only the provider-owned immutable change ref when the object is absent. If the exact state cannot be materialized, mark scope resolution incomplete rather than inspecting a mutable or unrelated checkout.
+
+Reject symlinks for every agent-readable or dependency-hashed path. Open without following links where supported and verify every canonical target remains beneath the snapshot root before reading. Agents may read surrounding files only beneath this root. Hash dependency content from the same snapshot and keep it alive until all agents, retries, tracing, and dependency hashes complete; then remove it in orchestrator-owned cleanup.
+
 ## Freeform focus
 
 Anything not matching a scope rule becomes reviewer focus over local mode. It is prioritization only and cannot change agent ownership, output schemas, blocking policy, or safety rules.
@@ -89,6 +95,7 @@ change number, when remote
 title and base branch, when remote
 trusted base identity
 head identity
+immutable context root and identity
 diff
 changed-file manifest
 untracked paths

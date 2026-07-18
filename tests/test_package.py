@@ -60,6 +60,10 @@ class PackageTests(unittest.TestCase):
         self.assertIn("metadata-only", orchestration)
         self.assertIn("description_hash", orchestration)
         self.assertIn("cache.py probe", orchestration)
+        self.assertIn("immutable context root", scope)
+        self.assertIn("--final-guard-run", orchestration)
+        self.assertIn("--expected-generation", orchestration)
+        self.assertIn("scope_key", orchestration)
 
     def test_large_diff_and_restricted_environment_contracts_are_explicit(self) -> None:
         main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
@@ -79,7 +83,29 @@ class PackageTests(unittest.TestCase):
             self.assertIn("base drift: unverified", text)
             self.assertIn("git ls-remote", text)
             self.assertIn("Never substitute local changes", text)
+            self.assertIn("temporary detached worktree", text)
         self.assertIn("original and effective character counts", scope)
+
+        github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")
+        diff_command = next(line for line in github.splitlines() if line.startswith("gh pr diff "))
+        self.assertNotIn("--patch", diff_command)
+
+    def test_configuration_safety_contracts_are_explicit(self) -> None:
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        contract = (SKILL / "references" / "agent-contract.md").read_text(encoding="utf-8")
+        self.assertIn("triggers.project_checklist", config)
+        self.assertIn("CHECKLIST_FAIL", config)
+        self.assertIn(".env*", config)
+        self.assertIn("client_secret.json", config)
+        self.assertIn("Local and path reviews use committed `HEAD`", config)
+        self.assertIn("full_review = false", config)
+        self.assertIn("project_checklist = []", config)
+        self.assertIn("orchestrator-owned transport metadata", contract)
+        self.assertIn("duplicates another extension domain", contract)
+
+        scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
+        self.assertIn("Reject symlinks for every agent-readable", scope)
+        self.assertIn("all agents, retries, tracing, and dependency hashes complete", scope)
 
     def test_synthetic_extension_fixture_is_complete(self) -> None:
         fixture = ROOT / "tests" / "fixtures" / "consumer" / ".deep-review"
