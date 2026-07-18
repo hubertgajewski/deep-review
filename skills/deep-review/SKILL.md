@@ -92,7 +92,7 @@ When changed lines exceed `large_diff_lines`, assign every path exactly one buck
 - Send metadata-only placeholders for low-risk and generated paths.
 - Preserve the complete manifest in every prompt.
 - Mark the review partial whenever a required path is metadata-only.
-- Do not emit `ready` until an explicit `--full-review` pass covers every required non-generated path.
+- Do not emit `ready` until a distinct invocation with effective `full_review = true` covers every required non-generated path.
 
 Report bucket counts, threshold, and partial/full coverage state.
 
@@ -163,7 +163,7 @@ The caller decides what to fix. After a changed reviewed state, advance the pers
 
 If any result was reused or the iteration used targeted reruns and the aggregate is about to become `ready`, disable reuse and dispatch every currently matching agent against the complete current required scope. This guard is not a fourth iteration. Only its fresh results may produce `ready`.
 
-Before a fresh guard, read and retain the scope state's generation. After it completes, persist with `cache.py state --final-guard-run --expected-generation <observed>` so earlier reuse and targeted-rerun flags are cleared only when no concurrent state change occurred. On a generation mismatch, discard the guard result and rerun against the rebuilt scope. If the guard finds a blocker, return `blocked`. Wait for another caller change before any further review iteration.
+Before dispatch, read and retain the current scope-state generation when one exists. Supply it as `cache.py state --expected-generation <observed>` for every update to that scope; on a generation mismatch, discard the stale result and rebuild against current state. Before a fresh guard, retain both that generation and the reviewed-state hash. After it completes, persist the same hash with `cache.py state --final-guard-run --expected-generation <observed>` so the guard cannot advance the iteration or clear flags for a different or concurrently changed state. If the guard finds a blocker, return `blocked`. Wait for another caller change before any further review iteration.
 
 ## Prohibitions
 

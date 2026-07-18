@@ -71,6 +71,7 @@ class PackageTests(unittest.TestCase):
         for bucket in ("high-risk", "normal", "low-risk", "generated"):
             self.assertIn(bucket, main)
         self.assertIn("--full-review", main)
+        self.assertIn("Effective `full_review = true`", orchestration)
         self.assertIn("cannot produce `ready`", orchestration)
         self.assertIn("dispatch: serial fallback", main)
         self.assertIn("Do not run builds, tests, linters", main)
@@ -84,6 +85,9 @@ class PackageTests(unittest.TestCase):
             self.assertIn("git ls-remote", text)
             self.assertIn("Never substitute local changes", text)
             self.assertIn("temporary detached worktree", text)
+            self.assertIn("metadata again", text)
+            self.assertIn("retry the complete metadata-", text)
+            self.assertIn("second mismatch fails scope resolution", text)
         self.assertIn("original and effective character counts", scope)
 
         github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")

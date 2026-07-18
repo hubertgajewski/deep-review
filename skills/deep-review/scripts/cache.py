@@ -297,11 +297,15 @@ def validate_hml(text: str) -> dict[str, int]:
         pass
     else:
         for line in body:
-            fields = line.split(" | ", 4)
+            if line.count(" | ") != 4:
+                raise CacheError(f"invalid H/M/L field separators: {line}")
+            fields = line.split(" | ")
             if len(fields) != 5 or fields[0] not in {"HIGH", "MEDIUM", "LOW"}:
                 raise CacheError(f"invalid H/M/L finding line: {line}")
             if not fields[1] or not fields[2] or not fields[3] or not fields[4]:
                 raise CacheError("H/M/L finding fields cannot be empty")
+            if any(re.search(r"(?<!\\)\|", field) for field in fields):
+                raise CacheError("literal pipes in H/M/L fields must be escaped as \\|")
             location = re.fullmatch(r"(.+):([1-9]\d*)", fields[2])
             if not location:
                 raise CacheError("H/M/L locations must use repository-relative file:line")
@@ -516,25 +520,41 @@ def command_state(args: argparse.Namespace) -> None:
     with cache_lock(cache_dir, "state"):
         states = read_scope_states(state_path)
         prior = states.get(args.scope_key)
-        if prior is None:
-            iteration = 1
-        elif prior["reviewed_state_hash"] == args.reviewed_state_hash:
-            iteration = prior["iteration"]
-        else:
-            iteration = prior["iteration"] + 1
-        if iteration > 3:
-            raise CacheError("changed review iteration limit exceeded")
+        if prior is None and args.expected_generation is not None:
+            raise CacheError("new scope state cannot have an expected generation")
+        if prior is not None:
+            if args.expected_generation is None:
+                raise CacheError("existing scope state requires --expected-generation")
+            if args.expected_generation != prior["generation"]:
+                stage = "final guard" if args.final_guard_run else "review"
+                raise CacheError(f"scope state changed during {stage}; rebuild against current state")
+
         if args.final_guard_run:
-            if prior is None or args.expected_generation != prior["generation"]:
-                raise CacheError("scope state changed during final guard; rerun the fresh guard")
+            if prior is None:
+                raise CacheError("final guard requires an existing scope state")
+            if args.reviewed_state_hash != prior["reviewed_state_hash"]:
+                raise CacheError("reviewed state changed during final guard; rerun the fresh guard")
+            iteration = prior["iteration"]
             reuse_used = False
             targeted_rerun_used = False
         else:
-            if args.expected_generation is not None:
-                raise CacheError("--expected-generation requires --final-guard-run")
-            reuse_used = args.reuse_used or (prior is not None and prior["reuse_used"])
+            new_sequence = (
+                prior is not None
+                and prior["status"] == "ready"
+                and prior["reviewed_state_hash"] != args.reviewed_state_hash
+            )
+            if prior is None or new_sequence:
+                iteration = 1
+            elif prior["reviewed_state_hash"] == args.reviewed_state_hash:
+                iteration = prior["iteration"]
+            else:
+                iteration = prior["iteration"] + 1
+            if iteration > 3:
+                raise CacheError("changed review iteration limit exceeded")
+            carry_prior = prior is not None and not new_sequence
+            reuse_used = args.reuse_used or (carry_prior and prior["reuse_used"])
             targeted_rerun_used = args.targeted_rerun_used or (
-                prior is not None and prior["targeted_rerun_used"]
+                carry_prior and prior["targeted_rerun_used"]
             )
         state = {
             "schema_version": SCHEMA_VERSION,
@@ -630,7 +650,11 @@ def build_parser() -> argparse.ArgumentParser:
     state_parser.add_argument("--reuse-used", action="store_true")
     state_parser.add_argument("--targeted-rerun-used", action="store_true")
     state_parser.add_argument("--final-guard-run", action="store_true")
-    state_parser.add_argument("--expected-generation", type=int)
+    state_parser.add_argument(
+        "--expected-generation",
+        type=int,
+        help="required compare-and-set generation when the scope state already exists",
+    )
     state_parser.set_defaults(handler=command_state)
 
     read_parser = subparsers.add_parser("state-read", help="read convergence state")

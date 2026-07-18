@@ -34,9 +34,9 @@ Consumer agent `applies_to` patterns are deterministic path triggers. New matchi
 
 Apply trusted high-risk patterns first, then generated, then low-risk, then normal. Denied components are rejected before bucketing. Each path belongs to one bucket.
 
-Metadata-only placeholders include path, status, bucket, and omitted changed-line count. `--full-review` disables metadata-only treatment for every required non-generated path. Generated paths may remain metadata-only unless trusted configuration marks them required.
+Metadata-only placeholders include path, status, bucket, and omitted changed-line count. Effective `full_review = true`, whether set by trusted policy or explicit `--full-review`, disables metadata-only treatment for every required non-generated path. Generated paths may remain metadata-only unless trusted configuration marks them required.
 
-A metadata-only required path makes coverage partial and cannot produce `ready`. Require a separate explicit `--full-review` invocation before readiness; do not promote the partial pass automatically.
+A metadata-only required path makes coverage partial and cannot produce `ready`. Require a distinct later invocation whose effective `full_review` value is true; do not promote the partial pass automatically.
 
 ## Cache keys and iterations
 
@@ -85,11 +85,13 @@ Persist at most 64 records keyed by scope identity, with reviewed-state hash, it
 - new scope: iteration 1
 - identical reviewed-state hash: keep iteration
 - changed reviewed-state hash: increment once
+- changed reviewed-state hash after `ready`: start a new sequence at iteration 1
 - refuse to advance above 3
 - reuse and targeted-rerun flags accumulate monotonically for the sequence
 - every state write advances a per-scope generation
-- only `state --final-guard-run --expected-generation <observed>` clears guard flags
-- a generation mismatch invalidates the guard and requires a rebuilt fresh guard
+- every update to an existing scope requires `--expected-generation <observed>`
+- only `state --final-guard-run --expected-generation <observed>` with the same reviewed-state hash clears guard flags
+- a generation mismatch invalidates the completed review result and requires a rebuilt scope; a guard hash mismatch requires a rebuilt fresh guard
 
 Blocking output is not reusable after a state change. It may be re-emitted for an identical state to avoid a no-value model call.
 

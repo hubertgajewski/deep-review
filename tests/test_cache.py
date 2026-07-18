@@ -26,6 +26,9 @@ def digest(seed: str) -> str:
     return CACHE.sha256_bytes(seed.encode("utf-8"))
 
 
+AUTO_GENERATION = object()
+
+
 def manifest(agent: str = "code") -> dict[str, object]:
     return {
         "schema_version": 1,
@@ -133,6 +136,21 @@ class ResultValidationTests(unittest.TestCase):
                 "HIGH | functionality | ../outside.py:1 | unsafe path | fix it\n"
                 "summary: 1 high / 0 medium / 0 low\n"
             )
+
+    def test_hml_requires_exact_separators_and_escaped_literal_pipes(self) -> None:
+        invalid_findings = (
+            "HIGH | functionality | src/a.py:1 | wrong value | use x | y\n",
+            "HIGH | functionality | src/a.py:1 | wrong|value | use x\n",
+        )
+        for finding in invalid_findings:
+            with self.subTest(finding=finding), self.assertRaises(CACHE.CacheError):
+                CACHE.validate_hml(finding + "summary: 1 high / 0 medium / 0 low\n")
+
+        escaped = (
+            "HIGH | functionality | src/a.py:1 | wrong \\| value | use x \\| y\n"
+            "summary: 1 high / 0 medium / 0 low\n"
+        )
+        self.assertEqual(CACHE.validate_hml(escaped), {"high": 1, "medium": 0, "low": 0})
 
     def test_checklist_empty_and_failure(self) -> None:
         passing = "- [pass] tests: focused test exists\nsummary: 1 pass / 0 fail / 0 N/A\nFailures: none.\n"
@@ -367,14 +385,19 @@ class CacheStorageTests(unittest.TestCase):
         reuse_used: bool = False,
         targeted_rerun_used: bool = False,
         final_guard_run: bool = False,
-        expected_generation: int | None = None,
+        expected_generation: int | None | object = AUTO_GENERATION,
         status: str = "blocked",
     ) -> dict[str, object]:
         output = io.StringIO()
+        scope_key = digest(scope)
+        if expected_generation is AUTO_GENERATION:
+            states = CACHE.read_scope_states(self.cache_dir / "state.json")
+            prior = states.get(scope_key)
+            expected_generation = None if prior is None else prior["generation"]
         args = argparse.Namespace(
             repo_root=str(self.root),
             cache_dir=".deep-review-cache",
-            scope_key=digest(scope),
+            scope_key=scope_key,
             reviewed_state_hash=reviewed,
             status=status,
             reuse_used=reuse_used,
@@ -429,6 +452,7 @@ class CacheStorageTests(unittest.TestCase):
         )
         self.assertFalse(guarded["reuse_used"])
         self.assertFalse(guarded["targeted_rerun_used"])
+        self.assertEqual(guarded["iteration"], second["iteration"])
 
     def test_final_guard_rejects_stale_generation(self) -> None:
         observed = self.advance_state(digest("one"), reuse_used=True)
@@ -439,6 +463,38 @@ class CacheStorageTests(unittest.TestCase):
                 final_guard_run=True,
                 expected_generation=observed["generation"],
             )
+
+    def test_final_guard_rejects_a_different_reviewed_state(self) -> None:
+        observed = self.advance_state(digest("one"), reuse_used=True)
+        with self.assertRaisesRegex(CACHE.CacheError, "reviewed state changed during final guard"):
+            self.advance_state(
+                digest("two"),
+                final_guard_run=True,
+                expected_generation=observed["generation"],
+            )
+
+    def test_existing_scope_updates_require_current_generation(self) -> None:
+        observed = self.advance_state(digest("one"))
+        with self.assertRaisesRegex(CACHE.CacheError, "requires --expected-generation"):
+            self.advance_state(digest("one"), expected_generation=None)
+
+        self.advance_state(digest("one"))
+        with self.assertRaisesRegex(CACHE.CacheError, "changed during review"):
+            self.advance_state(
+                digest("two"), expected_generation=observed["generation"]
+            )
+
+    def test_changed_state_after_ready_starts_a_new_sequence(self) -> None:
+        first = self.advance_state(digest("first"), status="blocked")
+        second = self.advance_state(digest("second"), status="blocked")
+        ready = self.advance_state(digest("ready"), status="ready")
+        restarted = self.advance_state(digest("changed"), status="blocked")
+        advanced = self.advance_state(digest("changed-again"), status="blocked")
+        self.assertEqual(first["iteration"], 1)
+        self.assertEqual(second["iteration"], 2)
+        self.assertEqual(ready["iteration"], 3)
+        self.assertEqual(restarted["iteration"], 1)
+        self.assertEqual(advanced["iteration"], 2)
 
     def test_state_read_requires_scope_for_multiple_records(self) -> None:
         self.advance_state(digest("a-one"), scope="scope-a")
