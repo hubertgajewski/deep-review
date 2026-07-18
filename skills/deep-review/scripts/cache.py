@@ -556,6 +556,8 @@ def command_state(args: argparse.Namespace) -> None:
             targeted_rerun_used = args.targeted_rerun_used or (
                 carry_prior and prior["targeted_rerun_used"]
             )
+        if args.status == "ready" and (reuse_used or targeted_rerun_used):
+            raise CacheError("ready state with reuse or targeted reruns requires a successful final guard")
         state = {
             "schema_version": SCHEMA_VERSION,
             "scope_key": args.scope_key,

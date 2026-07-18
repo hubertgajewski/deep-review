@@ -41,13 +41,33 @@ class PackageTests(unittest.TestCase):
         self.assertIn("$deep-review", text)
 
     def test_core_agents_declare_fixed_schemas(self) -> None:
-        agents = list((SKILL / "references" / "agents").glob("*.md"))
-        self.assertEqual(len(agents), 7)
-        for agent in agents:
+        main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        roster_pattern = re.compile(
+            r"^\| (?P<name>[a-z-]+) \| \[[^]]+\]\(references/agents/(?P=name)\.md\) "
+            r"\| [^|]+ \| (?P<scope>full|matched) \| (?P<schema>hml|checklist) \|$",
+            re.MULTILINE,
+        )
+        roster = {
+            match.group("name"): (match.group("scope"), match.group("schema"))
+            for match in roster_pattern.finditer(main)
+        }
+        agents = {path.stem: path for path in (SKILL / "references" / "agents").glob("*.md")}
+        self.assertEqual(set(roster), set(agents))
+        self.assertEqual(len(roster), 7)
+        for name, (scope, schema) in roster.items():
+            agent = agents[name]
             text = agent.read_text(encoding="utf-8")
             self.assertTrue(text.startswith("---\n"), agent.name)
-            schema = re.search(r"^output_schema: (hml|checklist)$", text, re.MULTILINE)
-            self.assertIsNotNone(schema, agent.name)
+            declared_name = re.search(r"^name: ([a-z-]+)$", text, re.MULTILINE)
+            declared_scope = re.search(r"^prompt_scope: (full|matched)$", text, re.MULTILINE)
+            declared_schema = re.search(r"^output_schema: (hml|checklist)$", text, re.MULTILINE)
+            self.assertIsNotNone(declared_name, agent.name)
+            self.assertIsNotNone(declared_scope, agent.name)
+            self.assertIsNotNone(declared_schema, agent.name)
+            assert declared_name and declared_scope and declared_schema
+            self.assertEqual(declared_name.group(1), name)
+            self.assertEqual(declared_scope.group(1), scope)
+            self.assertEqual(declared_schema.group(1), schema)
 
     def test_scope_and_guard_contracts_are_explicit(self) -> None:
         scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
@@ -86,13 +106,20 @@ class PackageTests(unittest.TestCase):
             self.assertIn("Never substitute local changes", text)
             self.assertIn("temporary detached worktree", text)
             self.assertIn("metadata again", text)
-            self.assertIn("retry the complete metadata-", text)
+            self.assertIn("retry the complete metadata-object-diff-metadata", text)
             self.assertIn("second mismatch fails scope resolution", text)
+            self.assertIn("verified immutable", text)
+            self.assertIn("never use a change-number-based patch", text)
+            self.assertIn("git check-ref-format --branch", text)
+            self.assertIn("full object IDs", text)
         self.assertIn("original and effective character counts", scope)
 
         github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")
-        diff_command = next(line for line in github.splitlines() if line.startswith("gh pr diff "))
-        self.assertNotIn("--patch", diff_command)
+        gitlab = (SKILL / "references" / "providers" / "gitlab.md").read_text(encoding="utf-8")
+        self.assertIn('git diff "$BASE_SHA...$HEAD_SHA"', github)
+        self.assertIn('git diff "$BASE_SHA" "$HEAD_SHA"', gitlab)
+        self.assertNotIn("gh pr diff", github)
+        self.assertNotIn("glab mr diff", gitlab)
 
     def test_configuration_safety_contracts_are_explicit(self) -> None:
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")

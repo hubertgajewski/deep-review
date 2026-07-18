@@ -454,6 +454,23 @@ class CacheStorageTests(unittest.TestCase):
         self.assertFalse(guarded["targeted_rerun_used"])
         self.assertEqual(guarded["iteration"], second["iteration"])
 
+    def test_ready_state_with_guard_history_requires_final_guard(self) -> None:
+        observed = self.advance_state(digest("one"), reuse_used=True)
+        with self.assertRaisesRegex(CACHE.CacheError, "requires a successful final guard"):
+            self.advance_state(digest("one"), status="ready")
+
+        state = CACHE.read_scope_states(self.cache_dir / "state.json")[digest("scope-key")]
+        self.assertEqual(state["generation"], observed["generation"])
+        guarded = self.advance_state(
+            digest("one"),
+            status="ready",
+            final_guard_run=True,
+            expected_generation=observed["generation"],
+        )
+        self.assertEqual(guarded["status"], "ready")
+        self.assertFalse(guarded["reuse_used"])
+        self.assertFalse(guarded["targeted_rerun_used"])
+
     def test_final_guard_rejects_stale_generation(self) -> None:
         observed = self.advance_state(digest("one"), reuse_used=True)
         self.advance_state(digest("one"), targeted_rerun_used=True)
