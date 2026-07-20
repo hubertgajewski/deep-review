@@ -38,7 +38,7 @@ high_risk = ["**/auth/**", "**/security/**", "**/crypto/**", ".github/workflows/
 
 [triggers]
 docs = ["README*", "docs/**", "AGENTS.md", "CLAUDE.md", ".deep-review/**", "skills/**"]
-ci = [".github/workflows/**", ".gitlab-ci.yml", ".gitlab/ci/**", "**/action.yml", "**/action.yaml", "scripts/**", "**/*.sh"]
+ci = [".github/workflows/**", ".gitlab-ci.yml", ".gitlab/ci/**", "**/action.yml", "**/action.yaml", "scripts/**", "**/*.sh", "Jenkinsfile", "**/*.groovy"]
 project_checklist = []
 
 [language_agents]
@@ -56,11 +56,13 @@ Trusted `large_diff.full_review = true` makes an invocation full by policy; expl
 
 `triggers.project_checklist` is an optional string array controlling which changed paths activate a trusted `.deep-review/checklist.md`. When the key is absent or the array is empty, a trusted checklist matches every non-generated changed path.
 
+The default `**/*.groovy` CI trigger is intentionally conservative so Jenkins Shared Library code is not missed when no `Jenkinsfile` changes. A Groovy suffix alone is not finding evidence: the CI reviewer must demonstrate Jenkins Pipeline or Shared Library execution context and ignore ordinary Groovy application code. Consumers using custom Pipeline Script Paths or non-Groovy Shared Library resources must list those repository-specific exact or prefix paths in trusted `triggers.ci`.
+
 `cache_dir` must resolve beneath the repository and must already be ignored by Git. This source repository ignores the default; each consuming repository must also ignore whichever cache path it uses. An unignored, external, symlinked, or unwritable cache path disables persistence for that invocation. Treat records as trusted local state; never restore this directory from an untrusted CI artifact or share it with jobs, forks, or users that can write it.
 
 ## Language agents and rules
 
-The built-in language agents are `typescript`, `python`, `swift`, `java`, and `javascript`. They are enabled by default and dispatch only for matching changed paths. `language_agents.disabled` is a string array of agent names. `language_rules.disabled` is a string array of complete namespaced rule IDs such as `typescript.no-explicit-any`.
+The built-in language agents are `typescript`, `python`, `swift`, `java`, `javascript`, `groovy`, and `kotlin`. They are enabled by default and dispatch only for matching changed paths. `language_agents.disabled` is a string array of agent names. `language_rules.disabled` is a string array of complete namespaced rule IDs such as `typescript.no-explicit-any`.
 
 Both arrays default to empty. Reject non-string items, duplicates, unknown agent names, unknown rule IDs, and unknown keys within either table. Report the configuration error and make the aggregate `incomplete`; never ignore or guess an invalid entry. Disabling an agent makes all its rules inactive. Listing one of that agent's rules as disabled as well is redundant but valid.
 
