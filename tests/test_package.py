@@ -380,6 +380,15 @@ class PackageTests(unittest.TestCase):
             assert name
             self.assertFalse(name.group(1).startswith("x-"), path.name)
 
+    def test_extension_names_are_unique_independently_of_domains(self) -> None:
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        contract = (SKILL / "references" / "agent-contract.md").read_text(encoding="utf-8")
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+
+        self.assertIn("two files cannot share a `name` even when their domains differ", config)
+        self.assertIn("name duplicates another extension name, even when their domains differ", contract)
+        self.assertIn("Duplicate extension names or domains", user_config)
+
     def test_javascript_promise_rule_precedence_is_explicit(self) -> None:
         rules = SKILL / "references" / "language-rules" / "javascript"
         unhandled = (rules / "unhandled-promise.md").read_text(encoding="utf-8")

@@ -96,7 +96,7 @@ The cache directory must remain inside the repository and be ignored by Git. Do 
 
 Add one Markdown file per reviewer under `.deep-review/agents/`. The frontmatter declares deterministic path matching and output behavior; the body contains the trusted reviewer instructions.
 
-Consumer extension filenames, `name` values, and `domain` values should use the reserved `x-` namespace. Use `x-<owner>-<purpose>` so a future built-in reviewer cannot collide with the customization. The filename alone is not enough because `name` and `domain` are validated independently.
+Consumer extension filenames, `name` values, and `domain` values should use the reserved `x-` namespace. Use `x-<owner>-<purpose>` so a future built-in reviewer cannot collide with the customization. The filename, `name`, and `domain` must each be unique across extension files; two files cannot share a `name` even when their domains differ.
 
 For example, add `.deep-review/agents/x-example-cobol.md`:
 
@@ -126,7 +126,7 @@ rules in `docs/cobol-guidelines.md` and follow the shared Deep Review contract.
 
 Every reference must exist at the trusted revision. Names use lowercase letters, digits, and hyphens. `prompt_scope` is `full` or `matched`; `output_schema` is `hml` or `checklist`. Extension `blocking` values follow the selected schema.
 
-Built-in ownership takes precedence when subjects overlap. Duplicate extension domains, identities equal to built-in names or language-rule namespaces, attempts to replace shared rules, missing references, or unsafe paths make the review incomplete.
+Built-in ownership takes precedence when subjects overlap. Duplicate extension names or domains, identities equal to built-in names or language-rule namespaces, attempts to replace shared rules, missing references, or unsafe paths make the review incomplete.
 
 ### Temporary compatibility reviewers
 

@@ -14,6 +14,8 @@ Deep Review is a configurable, review-only Agent Skill that coordinates speciali
 
 Deep Review reviews code; it does not edit consumer source files or apply fixes. Diffs, change-request descriptions, paths, checklists, and reviewer focus are treated as untrusted input. A `ready` result means the configured review completed without blockers—it does not claim that builds, tests, linters, or other project validation passed.
 
+A skill stored inside a repository is trusted client configuration, so do not initiate a review from an untrusted checkout that can replace that copy. For pull requests, merge requests, forks, and other untrusted branches, start the client in a separate trusted checkout and invoke a user- or administrator-installed Deep Review with `--github-pr` or `--gitlab-mr`. Deep Review will materialize the reviewed head separately. See [Installation](docs/installation.md#choose-a-scope) for the trust model.
+
 ## Quick start
 
 1. [Install the skill](docs/installation.md) for your AI client.

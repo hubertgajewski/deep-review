@@ -4,7 +4,11 @@ Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep
 
 ## Choose a scope
 
-Project installation is recommended for shared, reproducible review behavior. Commit the installed `deep-review` directory with the repository so teammates and remote agents use the reviewed version. User installation is useful for personal use across many repositories but is not available in every client.
+Project installation provides shared, reproducible behavior when the current checkout and the people allowed to change its skill files are already trusted. Commit the installed `deep-review` directory so teammates and remote agents use the reviewed version, and protect changes to that directory with repository ownership or required-approval rules where available. Treat changes to a vendored skill like changes to executable CI configuration.
+
+Do not initiate a review from an untrusted checkout containing a project-installed skill. A branch, merge request, or fork can replace `SKILL.md` before Deep Review starts and therefore before its untrusted-input boundaries apply. For untrusted changes, install the reviewed Deep Review commit in a user or administrator location, start the AI client from a separate clean checkout of the trusted base that does not contain contributor-controlled skill changes, and use `--github-pr` or `--gitlab-mr`. Deep Review then retrieves and materializes the reviewed head in its isolated review context. If the client gives project skills precedence over user skills, the separate trusted checkout is required even when a user copy is installed. For a client without user or administrator installation, keep the reviewed project copy only in that separate trusted checkout and initiate the remote review there.
+
+User installation is also useful for personal use across many repositories, but it is not available in every client.
 
 After installation, the important path is:
 

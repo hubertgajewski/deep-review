@@ -96,9 +96,9 @@ references:
 
 The body is the trusted reviewer instruction. `domain` is a unique extension-specialty label, while built-in prompt ownership always takes precedence when subjects overlap. `applies_to` supplies deterministic triggers, and every path declared in `references` must exist at the trusted revision and be included in the trusted prompt bundle.
 
-Names use lowercase letters, digits, and hyphens. The `x-` prefix is reserved for consumer extensions; package-owned built-in agent names, domains, and language-rule namespaces must never use it. Consumers should use `x-<owner>-<purpose>` for the filename, `name`, and `domain`. The filename alone is not collision-safe because frontmatter identities are validated independently. Existing extension names without `x-` remain valid, but do not carry the same forward-compatibility guarantee.
+Names use lowercase letters, digits, and hyphens. The `x-` prefix is reserved for consumer extensions; package-owned built-in agent names, domains, and language-rule namespaces must never use it. Consumers should use `x-<owner>-<purpose>` for the filename, `name`, and `domain`. The filename, `name`, and `domain` must each be unique across extension files; two files cannot share a `name` even when their domains differ. Existing extension names without `x-` remain valid, but do not carry the same forward-compatibility guarantee.
 
-`prompt_scope` is `full` or `matched`; `output_schema` is `hml` or `checklist`. Reject missing or unknown fields that affect readiness, unsafe or unavailable reference paths, duplicate extension domains, names or domains equal to a built-in agent or language-rule namespace, and attempts to replace shared rules.
+`prompt_scope` is `full` or `matched`; `output_schema` is `hml` or `checklist`. Reject missing or unknown fields that affect readiness, unsafe or unavailable reference paths, duplicate extension names or domains, names or domains equal to a built-in agent or language-rule namespace, and attempts to replace shared rules.
 
 ## Pattern rules
 

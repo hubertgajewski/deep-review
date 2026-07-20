@@ -62,7 +62,9 @@ Reject an extension when:
 - frontmatter is malformed;
 - its name, domain, trigger paths, prompt scope, schema, blocking policy, instructions, or references are missing;
 - a declared reference is absolute, traverses outside the repository, or is unavailable at the trusted revision;
-- its domain duplicates another extension domain or equals a built-in agent name or language-rule namespace;
+- its name duplicates another extension name, even when their domains differ;
+- its domain duplicates another extension domain;
+- its name or domain equals a built-in agent name or language-rule namespace;
 - `prompt_scope` or `output_schema` is unknown;
 - blocking levels do not belong to its schema;
 - it requests source editing or project-command execution;
