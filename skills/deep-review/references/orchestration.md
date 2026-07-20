@@ -27,8 +27,17 @@ Every dispatched agent receives `CHANGED_FILES`, even when its inline matched di
 - docs: dispatch for new paths, documentation, assistant/skill policy, configuration examples, CI files, or newly introduced environment/configuration names
 - CI: dispatch for `.github/workflows/**`, `.gitlab-ci.yml`, `.gitlab/ci/**`, action metadata, shell files, or automation scripts
 - project-checklist: dispatch only when a trusted checklist exists and its trusted patterns match; when patterns are absent, match every non-generated changed path
+- typescript: dispatch once for `**/*.ts`, `**/*.tsx`, `**/*.mts`, or `**/*.cts` when the agent and at least one rule are enabled
+- python: dispatch once for `**/*.py` or `**/*.pyi` when the agent and at least one rule are enabled
+- swift: dispatch once for `**/*.swift` or exact `Package.swift` when the agent and at least one rule are enabled
 
 Consumer agent `applies_to` patterns are deterministic path triggers. New matching agents run even if they were skipped in the previous iteration.
+
+A built-in language row with no matching path emits `SKIPPED: language trigger did not match` and contributes zero findings to readiness.
+
+Validate `language_agents.disabled` and `language_rules.disabled` against the package-owned catalogs before evaluating language dispatch. Assemble a matching language prompt from the shared contract, H/M/L schema, base language prompt, and only the enabled rule fragments in declared order. Include the ordered enabled rule IDs as trusted prompt metadata. Never include a disabled fragment or dispatch one subagent per rule.
+
+For fresh language output, apply the normal H/M/L validator plus the effective rule set. When `cache.py validate-result` is available, pass each enabled ID as a repeated `--allowed-category` argument; otherwise perform the equivalent exact-membership check before aggregation or caching.
 
 ## Large diffs
 
@@ -65,6 +74,8 @@ dependencies: sorted path and content-hash pairs
 ```
 
 Use empty strings for non-applicable remote fields. Never omit required names. Compute SHA-256 over canonical UTF-8 JSON.
+
+For a language agent, `agent_prompt_hash` covers the exact effective base prompt plus enabled rule fragments in canonical declared order. The existing `config_hash` covers the complete trusted configuration. A configuration change or enabled-fragment change therefore invalidates reuse without another key-manifest field.
 
 Build the convergence `scope_key` only from stable request identity:
 

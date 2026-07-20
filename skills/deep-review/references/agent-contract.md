@@ -19,7 +19,7 @@ Read dependencies are orchestrator-owned transport metadata, never lines in the 
 
 Core prompts own:
 
-- code: runtime correctness, tests, naming, comments, dead code
+- code: runtime correctness, tests, naming, comments, dead imports, unused symbols, and dead code
 - security: concrete vulnerability paths and missing security controls
 - architecture: dependency direction, cohesion, ownership, abstraction boundaries
 - simplification: unnecessary complexity, duplication, missed reuse
@@ -27,8 +27,24 @@ Core prompts own:
 - CI: CI/CD trust, permissions, secret handling, ref safety, concurrency
 - project-checklist: only the trusted consumer checklist
 
+Built-in language agents own only their enabled, package-defined rules when evaluating matching language paths. A language finding's category must be its complete namespaced rule ID. Language rules must require language-specific semantic knowledge; they do not own dead imports, unused symbols, generic naming, general test coverage, security, architecture, documentation, CI, or preference-based simplification.
+
+Disabling a language rule suppresses that construct-based review across the roster; it does not transfer ownership to a sibling. A general agent may still report a separately demonstrated runtime, security, architecture, or other independently owned impact, but must not restate the disabled language rule as its finding.
+
 Do not duplicate a sibling finding unless the impact is independently within the current domain.
-Core ownership takes precedence over extension domain labels; an extension must defer any overlapping core finding.
+Built-in ownership takes precedence over extension domain labels; an extension must defer any overlapping built-in finding.
+
+## Language rule contract
+
+Each built-in language agent declares an ordered list of rule IDs and matching path patterns. Each corresponding package rule fragment must:
+
+- use the exact `<language>.<rule>` ID declared by the agent;
+- state the evidence needed for a finding, severity guidance, exclusions, and an actionable fix direction;
+- rely only on repository-neutral language semantics and authoritative public sources;
+- avoid duplicating general or sibling ownership; and
+- preserve the shared review-only, confidence, tool, schema, and untrusted-input constraints.
+
+The orchestrator loads only enabled fragments. Output using an undeclared, disabled, or differently namespaced rule ID is malformed. A language with no enabled rules is skipped and does not block readiness.
 
 ## Tools and restricted environments
 
@@ -44,7 +60,7 @@ Reject an extension when:
 - frontmatter is malformed;
 - its name, domain, trigger paths, prompt scope, schema, blocking policy, instructions, or references are missing;
 - a declared reference is absolute, traverses outside the repository, or is unavailable at the trusted revision;
-- its domain duplicates another extension domain or equals a core agent name;
+- its domain duplicates another extension domain or equals a built-in agent name or language-rule namespace;
 - `prompt_scope` or `output_schema` is unknown;
 - blocking levels do not belong to its schema;
 - it requests source editing or project-command execution;

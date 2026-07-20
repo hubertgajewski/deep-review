@@ -3,6 +3,28 @@
 Deep Review is a configurable multi-agent code-review skill for local changes,
 Git references, GitHub pull requests, and GitLab merge requests.
 
+## Language reviewers
+
+Matching TypeScript, Python, and Swift changes receive one repository-neutral language review in addition to the general review roster. Language agents own only their documented language-semantic rules; general concerns such as dead imports, unused symbols, runtime correctness, security, architecture, and simplification remain with their existing agents.
+
+All language agents and rules are enabled by default. Consumers can disable a complete agent or individual rule in the trusted `.deep-review/config.toml`:
+
+```toml
+[language_agents]
+disabled = ["swift"]
+
+[language_rules]
+disabled = ["typescript.no-explicit-any", "python.runtime-assert"]
+```
+
+Supported rule IDs:
+
+- TypeScript: `typescript.no-explicit-any`, `typescript.unsafe-type-assertion`, `typescript.unsafe-non-null-assertion`, `typescript.non-exhaustive-union`, `typescript.unhandled-promise`
+- Python: `python.mutable-default`, `python.bare-exception-handler`, `python.runtime-assert`
+- Swift: `swift.unsafe-force-unwrap`, `swift.unsafe-force-cast`, `swift.actor-isolation`, `swift.sendable-boundary`, `swift.unstructured-task-lifetime`, `swift.continuation-resume`
+
+Unknown or duplicate disable entries make the review incomplete instead of being ignored. Disabled rule fragments are excluded from the effective agent prompt.
+
 ## Continuous integration
 
 GitLab CI runs the complete Python unit-test suite on Python 3.10 and 3.14.

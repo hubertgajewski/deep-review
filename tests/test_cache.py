@@ -152,6 +152,29 @@ class ResultValidationTests(unittest.TestCase):
         )
         self.assertEqual(CACHE.validate_hml(escaped), {"high": 1, "medium": 0, "low": 0})
 
+    def test_hml_can_require_enabled_language_rule_categories(self) -> None:
+        finding = (
+            "MEDIUM | typescript.no-explicit-any | src/a.ts:1 | type boundary is unchecked | "
+            "use unknown and narrow\nsummary: 0 high / 1 medium / 0 low\n"
+        )
+        self.assertEqual(
+            CACHE.validate_hml(finding, {"typescript.no-explicit-any"}),
+            {"high": 0, "medium": 1, "low": 0},
+        )
+        with self.assertRaisesRegex(CACHE.CacheError, "not enabled"):
+            CACHE.validate_hml(finding, {"typescript.unsafe-type-assertion"})
+
+    def test_validate_result_command_rejects_invalid_allowed_categories(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = Path(directory) / "result.txt"
+            result.write_text("findings: none\nsummary: 0 high / 0 medium / 0 low\n", encoding="utf-8")
+            base = {"schema": "hml", "file": str(result)}
+            for categories in (["not-namespaced"], ["python.runtime-assert", "python.runtime-assert"]):
+                with self.subTest(categories=categories), self.assertRaises(CACHE.CacheError):
+                    CACHE.command_validate_result(
+                        argparse.Namespace(**base, allowed_category=categories)
+                    )
+
     def test_checklist_empty_and_failure(self) -> None:
         passing = "- [pass] tests: focused test exists\nsummary: 1 pass / 0 fail / 0 N/A\nFailures: none.\n"
         self.assertEqual(CACHE.validate_checklist(passing), {"pass": 1, "fail": 0, "N/A": 0})
