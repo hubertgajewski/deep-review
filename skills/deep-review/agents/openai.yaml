@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deep Review"
+  short_description: "Run configurable multi-agent repository reviews"
+  default_prompt: "Use $deep-review to review the current repository changes and report readiness."

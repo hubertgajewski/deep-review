@@ -1,0 +1,16 @@
+version = 1
+large_diff_lines = 120
+max_iterations = 3
+blocking_levels = ["HIGH", "MEDIUM", "CHECKLIST_FAIL"]
+
+[remote_review]
+provider = "auto"
+remote = "origin"
+
+[large_diff]
+generated = ["generated/**"]
+low_risk = ["docs/**"]
+high_risk = ["src/auth/**"]
+
+[triggers]
+project_checklist = ["src/**", "tests/**"]
