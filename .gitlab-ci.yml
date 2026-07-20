@@ -1,0 +1,31 @@
+stages:
+  - test
+
+variables:
+  CI_ENABLED:
+    value: "true"
+    description: "Set to false to disable automatic CI pipelines."
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_ENABLED == "false"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: "$CI_COMMIT_BRANCH"
+    - when: never
+
+test:
+  stage: test
+  parallel:
+    matrix:
+      - PYTHON_IMAGE:
+          - "python:3.10-slim@sha256:c1e4e6c01eb489c422288b2de34b0761ca316f7a2d98e2c33f47659a73ed108a"
+          - "python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6"
+  image: "$PYTHON_IMAGE"
+  interruptible: true
+  timeout: 5m
+  script:
+    - python -m unittest discover -s tests -v
