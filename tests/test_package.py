@@ -24,8 +24,8 @@ class PackageTests(unittest.TestCase):
             "references/providers/gitlab.md",
         ]
         required.extend(f"references/agents/{name}.md" for name in (
-            "architecture", "ci", "code", "docs", "java", "javascript", "project-checklist",
-            "python", "security", "simplification", "swift", "typescript"
+            "architecture", "ci", "code", "docs", "groovy", "java", "javascript", "kotlin",
+            "project-checklist", "python", "security", "simplification", "swift", "typescript"
         ))
         for relative in required:
             self.assertTrue((SKILL / relative).is_file(), relative)
@@ -54,7 +54,7 @@ class PackageTests(unittest.TestCase):
         }
         agents = {path.stem: path for path in (SKILL / "references" / "agents").glob("*.md")}
         self.assertEqual(set(roster), set(agents))
-        self.assertEqual(len(roster), 12)
+        self.assertEqual(len(roster), 14)
         for name, (scope, schema) in roster.items():
             agent = agents[name]
             text = agent.read_text(encoding="utf-8")
@@ -177,6 +177,22 @@ class PackageTests(unittest.TestCase):
                 "javascript.async-foreach",
                 "javascript.unhandled-promise",
             ),
+            "groovy": (
+                "groovy.elvis-falsy-default",
+                "groovy.unsafe-safe-navigation",
+                "groovy.gstring-map-key",
+                "groovy.equality-identity-confusion",
+                "groovy.regex-find-vs-match",
+                "groovy.division-semantics",
+            ),
+            "kotlin": (
+                "kotlin.unsafe-not-null-assertion",
+                "kotlin.platform-type-nullability",
+                "kotlin.array-equality",
+                "kotlin.shallow-data-class-copy",
+                "kotlin.swallowed-cancellation",
+                "kotlin.run-blocking-in-suspend",
+            ),
         }
         expected_patterns = {
             "typescript": ("**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"),
@@ -184,6 +200,8 @@ class PackageTests(unittest.TestCase):
             "swift": ("**/*.swift", "Package.swift"),
             "java": ("**/*.java",),
             "javascript": ("**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"),
+            "groovy": ("**/*.groovy", "**/*.gradle", "Jenkinsfile"),
+            "kotlin": ("**/*.kt", "**/*.kts"),
         }
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
@@ -214,7 +232,7 @@ class PackageTests(unittest.TestCase):
     def test_language_prompts_are_repository_neutral_and_exclude_general_dead_code(self) -> None:
         paths = [
             SKILL / "references" / "agents" / f"{language}.md"
-            for language in ("typescript", "python", "swift", "java", "javascript")
+            for language in ("typescript", "python", "swift", "java", "javascript", "groovy", "kotlin")
         ]
         paths.extend((SKILL / "references" / "language-rules").glob("*/*.md"))
         combined = "\n".join(path.read_text(encoding="utf-8") for path in paths).lower()
@@ -232,7 +250,7 @@ class PackageTests(unittest.TestCase):
         ):
             self.assertNotIn(platform_term, swift)
 
-        for language in ("typescript", "python", "swift", "java", "javascript"):
+        for language in ("typescript", "python", "swift", "java", "javascript", "groovy", "kotlin"):
             agent = (SKILL / "references" / "agents" / f"{language}.md").read_text(encoding="utf-8")
             self.assertIn("dead imports", agent)
             self.assertRegex(agent, r"unused (?:variables or )?symbols")
@@ -256,7 +274,7 @@ class PackageTests(unittest.TestCase):
             "unknown rule IDs", "duplicates", "aggregate `incomplete`"
         ):
             self.assertIn(token, config)
-        for language in ("typescript", "python", "swift", "java", "javascript"):
+        for language in ("typescript", "python", "swift", "java", "javascript", "groovy", "kotlin"):
             self.assertIn(f"`{language}`", config)
         self.assertIn("only the enabled rule fragments", orchestration)
         self.assertIn("Never include a disabled fragment", orchestration)
@@ -269,7 +287,8 @@ class PackageTests(unittest.TestCase):
         self.assertIn("agent_prompt_hash", orchestration)
         for rule_id in (
             "typescript.no-explicit-any", "python.mutable-default", "swift.actor-isolation",
-            "java.null-unboxing", "javascript.unsafe-optional-chaining"
+            "java.null-unboxing", "javascript.unsafe-optional-chaining",
+            "groovy.elvis-falsy-default", "kotlin.unsafe-not-null-assertion"
         ):
             self.assertIn(rule_id, readme)
 
@@ -303,6 +322,32 @@ class PackageTests(unittest.TestCase):
             "javascript.async-foreach",
         ):
             self.assertIn(specific, unhandled)
+
+    def test_kotlin_null_rule_precedence_is_explicit(self) -> None:
+        agent = (SKILL / "references" / "agents" / "kotlin.md").read_text(encoding="utf-8")
+        rules = SKILL / "references" / "language-rules" / "kotlin"
+        assertion = (rules / "unsafe-not-null-assertion.md").read_text(encoding="utf-8")
+        platform = (rules / "platform-type-nullability.md").read_text(encoding="utf-8")
+        self.assertIn("kotlin.unsafe-not-null-assertion", agent)
+        self.assertIn("kotlin.platform-type-nullability", agent)
+        self.assertIn("kotlin.platform-type-nullability", assertion)
+        self.assertIn("kotlin.unsafe-not-null-assertion", platform)
+
+    def test_groovy_kotlin_dsl_and_jenkins_ownership_is_explicit(self) -> None:
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        contract = (SKILL / "references" / "agent-contract.md").read_text(encoding="utf-8")
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
+        groovy = (SKILL / "references" / "agents" / "groovy.md").read_text(encoding="utf-8")
+        ci = (SKILL / "references" / "agents" / "ci.md").read_text(encoding="utf-8")
+        self.assertIn('"Jenkinsfile"', config)
+        for language in ("groovy", "kotlin"):
+            self.assertIn(f"`{language}`", config)
+        self.assertIn("equals a built-in agent name or language-rule namespace", contract)
+        self.assertIn("`build.gradle` as Groovy", orchestration)
+        self.assertIn("`build.gradle.kts` as Kotlin", orchestration)
+        self.assertIn("dispatches both the Groovy language agent and the CI agent", orchestration)
+        self.assertIn("Defer Gradle and Jenkins DSL APIs", groovy)
+        self.assertIn("Jenkins Pipelines", ci)
 
     def test_cache_is_ignored(self) -> None:
         ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()

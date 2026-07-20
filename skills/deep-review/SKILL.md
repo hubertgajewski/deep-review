@@ -57,6 +57,8 @@ language_rules.disabled = []
 | swift | [swift.md](references/agents/swift.md) | matching Swift path and enabled rules | matched | hml |
 | java | [java.md](references/agents/java.md) | matching Java path and enabled rules | matched | hml |
 | javascript | [javascript.md](references/agents/javascript.md) | matching JavaScript path and enabled rules | matched | hml |
+| groovy | [groovy.md](references/agents/groovy.md) | matching Groovy path and enabled rules | matched | hml |
+| kotlin | [kotlin.md](references/agents/kotlin.md) | matching Kotlin path and enabled rules | matched | hml |
 
 Load additional trusted agents from `.deep-review/agents/*.md`. Require the frontmatter and behavior defined in [Agent contract](references/agent-contract.md). Reject malformed definitions as `incomplete`; never improvise a schema.
 

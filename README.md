@@ -1,65 +1,178 @@
 # Deep Review
 
-Deep Review is a configurable multi-agent code-review skill for local changes,
-Git references, GitHub pull requests, and GitLab merge requests.
+Deep Review is a portable [Agent Skill](https://agentskills.io/) that coordinates
+multiple specialist reviewers and produces one readiness decision for a code
+change. It reviews local work, Git refs and ranges, repository paths, GitHub pull
+requests, and GitLab merge requests.
 
-## Language reviewers
+It is designed for serious pre-merge review: broad enough to cover correctness,
+security, architecture, maintainability, documentation, and CI, while keeping
+each reviewer inside a clearly defined scope.
 
-Matching TypeScript, Python, Swift, Java, and JavaScript changes receive one repository-neutral language review in addition to the general review roster. Language agents own only their documented language-semantic rules; general concerns such as dead imports, unused symbols, runtime correctness, security, architecture, and simplification remain with their existing agents.
+## What it does
 
-All language agents and rules are enabled by default. Consumers can disable a complete agent or individual rule in the trusted `.deep-review/config.toml`:
+Deep Review:
+
+- resolves the requested change once and gives every reviewer the same immutable
+  view of it;
+- runs general code, architecture, and simplification reviewers, plus conditional
+  security, documentation, CI, project-checklist, and language reviewers;
+- reports findings as `HIGH`, `MEDIUM`, or `LOW` and ends with `ready`, `blocked`,
+  or `incomplete`;
+- handles large changes conservatively and requires an explicit full pass before
+  declaring a partially reviewed change ready;
+- caches validated non-blocking results for repeat reviews, then performs a fresh
+  final guard before returning `ready`;
+- treats diffs, change descriptions, file names, and reviewer focus as untrusted
+  input.
+
+The skill is review-only. It does not edit the repository and does not run builds,
+tests, linters, formatters, or generators. A `ready` result means review-ready,
+not mechanically verified.
+
+## Requirements
+
+- An AI coding tool with [Agent Skills](https://agentskills.io/) support and
+  filesystem/Git access.
+- Git.
+- Python 3 is optional and enables persistent review-result caching.
+- GitHub reviews require an authenticated `gh` CLI; GitLab reviews require an
+  authenticated `glab` CLI.
+- A tool that can run subagents provides the intended parallel review experience.
+  Other tools can execute the same reviewers serially.
+
+## Install
+
+Clone the repository once:
+
+```bash
+git clone https://gitlab.com/hubertgajewski-ai/deep-review.git
+cd deep-review
+```
+
+Then copy the complete `skills/deep-review` directory to a skill location. For
+the broadest project-level compatibility, use `.agents/skills/`:
+
+```bash
+mkdir -p /path/to/your-project/.agents/skills
+cp -R skills/deep-review /path/to/your-project/.agents/skills/deep-review
+```
+
+Tool-specific locations are:
+
+| Tool | Project scope | Personal scope |
+| --- | --- | --- |
+| Codex CLI, IDE, and desktop | `.agents/skills/deep-review/` | `~/.agents/skills/deep-review/` |
+| Claude Code CLI and Claude Desktop Code tab | `.claude/skills/deep-review/` | `~/.claude/skills/deep-review/` |
+| Gemini CLI | `.agents/skills/deep-review/` or `.gemini/skills/deep-review/` | `~/.agents/skills/deep-review/` or `~/.gemini/skills/deep-review/` |
+| Google Antigravity | `.agents/skills/deep-review/` | `~/.agents/skills/deep-review/` |
+| Grok Build CLI | `.grok/skills/deep-review/` | `~/.grok/skills/deep-review/` or `~/.agents/skills/deep-review/` |
+| Cursor editor and CLI | `.agents/skills/deep-review/` or `.cursor/skills/deep-review/` | `~/.agents/skills/deep-review/` or `~/.cursor/skills/deep-review/` |
+| T3 Code | Use the Codex or Claude location for the provider selected in T3 Code | Use the corresponding provider location above |
+| GitHub Copilot in VS Code | `.agents/skills/deep-review/` or `.github/skills/deep-review/` | `~/.agents/skills/deep-review/` or `~/.copilot/skills/deep-review/` |
+
+Restart the tool or reload its skills after installation. See
+[Installation](docs/installation.md) for platform-specific commands, Claude
+Desktop upload instructions, verification steps, updates, and other compatible
+clients.
+
+Review the skill before installing it. Agent skills are operational instructions
+and can include executable scripts; treat them with the same care as source code.
+
+## Use
+
+Ask the agent to use `deep-review`. Depending on the client, select it from the
+skills menu, invoke `/deep-review`, mention `$deep-review`, or use natural
+language.
+
+```text
+Use deep-review to review my current changes.
+Use deep-review --base main.
+Use deep-review --range release...HEAD.
+Use deep-review --path src/auth.
+Use deep-review --github-pr 123.
+Use deep-review --gitlab-mr 456.
+Use deep-review --focus "pay special attention to backward compatibility".
+Use deep-review --full-review.
+```
+
+With no scope argument, Deep Review examines staged, unstaged, and safe untracked
+work. `--full-review` is mainly useful after a large-diff pass reports partial
+coverage. Remote reviews never silently fall back to local changes.
+
+## Configure
+
+Consumer configuration lives in committed files under `.deep-review/` in the
+repository being reviewed:
+
+```text
+.deep-review/
+├── config.toml          # review policy
+├── checklist.md         # optional project checklist
+└── agents/
+    └── cobol.md         # optional additional reviewer
+```
+
+For example, disable a complete built-in language reviewer or selected rules in
+`.deep-review/config.toml`:
 
 ```toml
+version = 1
+
 [language_agents]
 disabled = ["swift"]
 
 [language_rules]
-disabled = ["typescript.no-explicit-any", "python.runtime-assert"]
+disabled = [
+  "typescript.no-explicit-any",
+  "python.runtime-assert",
+]
 ```
 
-Supported rule IDs:
+To support an additional language or a project-specific domain, add a trusted
+reviewer definition under `.deep-review/agents/`. You can also customize large
+diff classification, blocking levels, sensitive path denial, remote provider
+selection, reviewer triggers, and the project checklist.
 
-- TypeScript: `typescript.no-explicit-any`, `typescript.unsafe-type-assertion`, `typescript.unsafe-non-null-assertion`, `typescript.non-exhaustive-union`, `typescript.unhandled-promise`
-- Python: `python.mutable-default`, `python.bare-exception-handler`, `python.runtime-assert`
-- Swift: `swift.unsafe-force-unwrap`, `swift.unsafe-force-cast`, `swift.actor-isolation`, `swift.sendable-boundary`, `swift.unstructured-task-lifetime`, `swift.continuation-resume`
-- Java: `java.null-unboxing`, `java.unchecked-cast`, `java.unsafe-optional-get`, `java.equals-hashcode-contract`, `java.autocloseable-lifetime`, `java.unsafe-finally`
-- JavaScript: `javascript.unsafe-optional-chaining`, `javascript.loss-of-precision`, `javascript.unsafe-finally`, `javascript.async-promise-executor`, `javascript.async-foreach`, `javascript.unhandled-promise`
+See [Configuration](docs/configuration.md) for the full schema, examples, and the
+trust model.
 
-Unknown or duplicate disable entries make the review incomplete instead of being ignored. Disabled rule fragments are excluded from the effective agent prompt.
+### Built-in language rules
 
-## Continuous integration
+All built-in language reviewers and rules are enabled by default and run only
+when matching files change.
 
-GitLab CI runs the complete Python unit-test suite on Python 3.10 and 3.14.
-The Python container images are pinned to reviewed multi-platform manifest
-digests; digest updates must be made explicitly and reviewed like other code
-changes.
+- TypeScript: `typescript.no-explicit-any`, `typescript.unsafe-type-assertion`,
+  `typescript.unsafe-non-null-assertion`, `typescript.non-exhaustive-union`,
+  `typescript.unhandled-promise`
+- Python: `python.mutable-default`, `python.bare-exception-handler`,
+  `python.runtime-assert`
+- Swift: `swift.unsafe-force-unwrap`, `swift.unsafe-force-cast`,
+  `swift.actor-isolation`, `swift.sendable-boundary`,
+  `swift.unstructured-task-lifetime`, `swift.continuation-resume`
+- Java: `java.null-unboxing`, `java.unchecked-cast`,
+  `java.unsafe-optional-get`, `java.equals-hashcode-contract`,
+  `java.autocloseable-lifetime`, `java.unsafe-finally`
+- JavaScript: `javascript.unsafe-optional-chaining`,
+  `javascript.loss-of-precision`, `javascript.unsafe-finally`,
+  `javascript.async-promise-executor`, `javascript.async-foreach`,
+  `javascript.unhandled-promise`
 
-Pipeline selection works as follows:
+Unknown or duplicate disable entries make the review `incomplete`; they are not
+silently ignored.
 
-- A push to a branch without an open merge request creates a branch pipeline.
-- After a merge request is open, its pipeline runs and the duplicate branch
-  pipeline is suppressed.
-- A pipeline started with **Build > Pipelines > New pipeline** in the GitLab UI
-  remains available even when automatic pipelines are disabled.
+## Documentation
 
-### Disabling automatic pipelines
+- [Installation](docs/installation.md) — supported clients and deployment scopes
+- [Configuration](docs/configuration.md) — policy, rules, checklists, and custom reviewers
+- [Contributing](CONTRIBUTING.md) — development workflow and tests
+- [Security](SECURITY.md) — vulnerability reporting and operational safety
+- [Maintainer guide](docs/maintainers.md) — release and GitLab CI administration
 
-Automatic branch and merge-request pipelines are enabled by default. To disable
-them, create a project or group CI/CD variable with these settings:
+Implementation-level orchestration contracts live inside
+[`skills/deep-review/references/`](skills/deep-review/references/) because they
+are loaded by the skill itself, not as end-user onboarding material.
 
-```text
-Key: CI_ENABLED
-Value: false
-Type: Variable
-Environment scope: All (*)
-Protect variable: cleared
-```
+## License
 
-The value must be the exact lowercase string `false`. For a project variable,
-open **Settings > CI/CD**, expand **Variables**, and select **Add variable**.
-Leave **Protect variable** cleared if the gate should apply to unprotected
-branches and merge requests as well.
-
-Delete the variable or change it to `true` to re-enable automatic pipelines.
-Manually started GitLab UI pipelines intentionally remain enabled because the
-`web` pipeline-source rule is evaluated before the automatic-pipeline gate.
+Deep Review is available under the [MIT License](LICENSE).

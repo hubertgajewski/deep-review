@@ -25,13 +25,17 @@ Every dispatched agent receives `CHANGED_FILES`, even when its inline matched di
 - code, architecture, simplification: always
 - security: dispatch for executable/source/config/dependency/CI paths, sensitive path components, credential-shaped added assignments, or untracked content not clearly docs/generated/test-only
 - docs: dispatch for new paths, documentation, assistant/skill policy, configuration examples, CI files, or newly introduced environment/configuration names
-- CI: dispatch for `.github/workflows/**`, `.gitlab-ci.yml`, `.gitlab/ci/**`, action metadata, shell files, or automation scripts
+- CI: dispatch for `.github/workflows/**`, `.gitlab-ci.yml`, `.gitlab/ci/**`, action metadata, shell files, automation scripts, or exact root `Jenkinsfile`
 - project-checklist: dispatch only when a trusted checklist exists and its trusted patterns match; when patterns are absent, match every non-generated changed path
 - typescript: dispatch once for `**/*.ts`, `**/*.tsx`, `**/*.mts`, or `**/*.cts` when the agent and at least one rule are enabled
 - python: dispatch once for `**/*.py` or `**/*.pyi` when the agent and at least one rule are enabled
 - swift: dispatch once for `**/*.swift` or exact `Package.swift` when the agent and at least one rule are enabled
 - java: dispatch once for `**/*.java` when the agent and at least one rule are enabled
 - javascript: dispatch once for `**/*.js`, `**/*.jsx`, `**/*.mjs`, or `**/*.cjs` when the agent and at least one rule are enabled
+- groovy: dispatch once for `**/*.groovy`, `**/*.gradle`, or exact root `Jenkinsfile` when the agent and at least one rule are enabled
+- kotlin: dispatch once for `**/*.kt` or `**/*.kts` when the agent and at least one rule are enabled
+
+Treat `build.gradle` as Groovy and `build.gradle.kts` as Kotlin; the latter matches `**/*.kts`, not `**/*.gradle`. A changed root `Jenkinsfile` dispatches both the Groovy language agent and the CI agent. Groovy owns only its enabled language-semantic rules there; Jenkins pipeline trust, credentials, execution policy, and other CI concerns remain CI ownership.
 
 Consumer agent `applies_to` patterns are deterministic path triggers. New matching agents run even if they were skipped in the previous iteration.
 
