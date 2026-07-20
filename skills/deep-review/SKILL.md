@@ -159,7 +159,7 @@ Status rules:
 
 ### 8. Enforce convergence and final guard
 
-The caller decides what to fix. After a changed reviewed state, advance the persisted iteration. Stop after three changed iterations and return the remaining findings; do not start a fourth iteration automatically. That `3/3` result completes the current convergence sequence. If the caller later explicitly invokes `deep-review` after changing the reviewed code, begin a new sequence at iteration 1 without deleting eligible agent-result cache records. An unchanged invocation remains at `3/3` and may re-emit validated cached blockers without a model call.
+The caller decides what to fix. After a changed reviewed state, advance the persisted iteration. Stop after three changed iterations and return the remaining findings; do not start a fourth iteration automatically. That `3/3` result completes the current convergence sequence. If the caller later explicitly invokes `deep-review` after changing the reviewed code, begin a new sequence at iteration 1 by passing orchestrator-owned `cache.py state --start-new-sequence`; never pass that flag for an automatic continuation. The user does not manage this transition, and eligible agent-result cache records remain intact. An unchanged invocation remains at `3/3` and may re-emit validated cached blockers without a model call.
 
 If any result was reused or the iteration used targeted reruns and the aggregate is about to become `ready`, disable reuse and dispatch every currently matching agent against the complete current required scope. This guard is not a fourth iteration. Only its fresh results may produce `ready`.
 

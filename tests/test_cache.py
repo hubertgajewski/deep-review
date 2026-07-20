@@ -385,6 +385,7 @@ class CacheStorageTests(unittest.TestCase):
         reuse_used: bool = False,
         targeted_rerun_used: bool = False,
         final_guard_run: bool = False,
+        start_new_sequence: bool = False,
         expected_generation: int | None | object = AUTO_GENERATION,
         status: str = "blocked",
     ) -> dict[str, object]:
@@ -403,6 +404,7 @@ class CacheStorageTests(unittest.TestCase):
             reuse_used=reuse_used,
             targeted_rerun_used=targeted_rerun_used,
             final_guard_run=final_guard_run,
+            start_new_sequence=start_new_sequence,
             expected_generation=expected_generation,
         )
         with redirect_stdout(output):
@@ -418,7 +420,9 @@ class CacheStorageTests(unittest.TestCase):
         second = advance(digest("two"))
         third = advance(digest("three"))
         unchanged_at_cap = advance(digest("three"))
-        restarted = advance(digest("four"))
+        with self.assertRaisesRegex(CACHE.CacheError, "must use --start-new-sequence"):
+            advance(digest("four"))
+        restarted = self.advance_state(digest("four"), start_new_sequence=True)
         self.assertEqual(first["iteration"], 1)
         self.assertEqual(unchanged["iteration"], 1)
         self.assertEqual(second["iteration"], 2)
@@ -525,7 +529,9 @@ class CacheStorageTests(unittest.TestCase):
         cached_result = agent_dir / "code.json"
         cached_result.write_text('{"preserved": true}\n', encoding="utf-8")
 
-        restarted = self.advance_state(digest("fixed"), status="blocked")
+        restarted = self.advance_state(
+            digest("fixed"), status="blocked", start_new_sequence=True
+        )
 
         self.assertEqual(first["iteration"], 1)
         self.assertEqual(second["iteration"], 2)
@@ -534,6 +540,29 @@ class CacheStorageTests(unittest.TestCase):
         self.assertFalse(restarted["reuse_used"])
         self.assertFalse(restarted["targeted_rerun_used"])
         self.assertEqual(cached_result.read_text(encoding="utf-8"), '{"preserved": true}\n')
+
+    def test_new_sequence_flag_is_valid_only_for_changed_terminal_state(self) -> None:
+        with self.assertRaisesRegex(CACHE.CacheError, "terminal iteration-3"):
+            self.advance_state(digest("first"), start_new_sequence=True)
+
+        first = self.advance_state(digest("first"))
+        with self.assertRaisesRegex(CACHE.CacheError, "terminal iteration-3"):
+            self.advance_state(digest("second"), start_new_sequence=True)
+
+        second = self.advance_state(digest("second"))
+        third = self.advance_state(digest("third"))
+        with self.assertRaisesRegex(CACHE.CacheError, "changed reviewed state"):
+            self.advance_state(digest("third"), start_new_sequence=True)
+        with self.assertRaisesRegex(CACHE.CacheError, "cannot start"):
+            self.advance_state(
+                digest("third"),
+                final_guard_run=True,
+                start_new_sequence=True,
+            )
+
+        self.assertEqual(first["iteration"], 1)
+        self.assertEqual(second["iteration"], 2)
+        self.assertEqual(third["iteration"], 3)
 
     def test_exhausted_sequence_rolls_over_across_process_invocations(self) -> None:
         command = [
@@ -555,6 +584,8 @@ class CacheStorageTests(unittest.TestCase):
             arguments = [*command, "--reviewed-state-hash", digest(reviewed)]
             if generation is not None:
                 arguments.extend(("--expected-generation", str(generation)))
+            if reviewed == "fixed":
+                arguments.append("--start-new-sequence")
             completed = subprocess.run(
                 arguments,
                 check=True,
@@ -643,6 +674,20 @@ class CacheStorageTests(unittest.TestCase):
         states = CACHE.read_scope_states(self.cache_dir / "state.json")
         self.assertEqual(len(states), CACHE.MAX_SCOPE_STATES)
         self.assertNotIn(digest("ready-scope"), states)
+
+    def test_scope_capacity_evicts_exhausted_reviews(self) -> None:
+        self.advance_state(digest("terminal-one"), scope="terminal-scope")
+        self.advance_state(digest("terminal-two"), scope="terminal-scope")
+        self.advance_state(digest("terminal-three"), scope="terminal-scope")
+        for index in range(CACHE.MAX_SCOPE_STATES - 1):
+            self.advance_state(digest(f"active-state-{index}"), scope=f"active-scope-{index}")
+
+        self.advance_state(digest("new-state"), scope="new-scope")
+
+        states = CACHE.read_scope_states(self.cache_dir / "state.json")
+        self.assertEqual(len(states), CACHE.MAX_SCOPE_STATES)
+        self.assertNotIn(digest("terminal-scope"), states)
+        self.assertIn(digest("new-scope"), states)
 
     def test_scope_capacity_preserves_unfinished_reviews(self) -> None:
         for index in range(CACHE.MAX_SCOPE_STATES):

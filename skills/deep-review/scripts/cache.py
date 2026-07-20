@@ -529,6 +529,9 @@ def command_state(args: argparse.Namespace) -> None:
                 stage = "final guard" if args.final_guard_run else "review"
                 raise CacheError(f"scope state changed during {stage}; rebuild against current state")
 
+        if args.final_guard_run and args.start_new_sequence:
+            raise CacheError("final guard cannot start a new convergence sequence")
+
         if args.final_guard_run:
             if prior is None:
                 raise CacheError("final guard requires an existing scope state")
@@ -542,9 +545,24 @@ def command_state(args: argparse.Namespace) -> None:
                 prior is not None
                 and prior["reviewed_state_hash"] != args.reviewed_state_hash
             )
+            exhausted_sequence = (
+                prior is not None
+                and prior["iteration"] == 3
+                and prior["status"] in {"blocked", "incomplete"}
+            )
+            if args.start_new_sequence:
+                if not exhausted_sequence:
+                    raise CacheError("new sequence requires a terminal iteration-3 review")
+                if not reviewed_state_changed:
+                    raise CacheError("new sequence requires a changed reviewed state")
+            elif exhausted_sequence and reviewed_state_changed:
+                raise CacheError(
+                    "changed review iteration limit exceeded; a later explicit invocation must use "
+                    "--start-new-sequence"
+                )
             new_sequence = (
                 reviewed_state_changed
-                and (prior["status"] == "ready" or prior["iteration"] == 3)
+                and (prior["status"] == "ready" or args.start_new_sequence)
             )
             if prior is None or new_sequence:
                 iteration = 1
@@ -577,7 +595,8 @@ def command_state(args: argparse.Namespace) -> None:
             evictable = [
                 item
                 for item in states.items()
-                if item[0] != args.scope_key and item[1]["status"] == "ready"
+                if item[0] != args.scope_key
+                and (item[1]["status"] == "ready" or item[1]["iteration"] == 3)
             ]
             if not evictable:
                 raise CacheError("scope state capacity is exhausted by unfinished reviews")
@@ -655,6 +674,11 @@ def build_parser() -> argparse.ArgumentParser:
     state_parser.add_argument("--reuse-used", action="store_true")
     state_parser.add_argument("--targeted-rerun-used", action="store_true")
     state_parser.add_argument("--final-guard-run", action="store_true")
+    state_parser.add_argument(
+        "--start-new-sequence",
+        action="store_true",
+        help="start iteration 1 after a changed terminal iteration-3 review",
+    )
     state_parser.add_argument(
         "--expected-generation",
         type=int,

@@ -80,14 +80,15 @@ Persist one latest record per agent. A record stores the key, classification (`n
 
 The record also stores the validated canonical key manifest, including its sorted dependency identities. On a later invocation, use `cache.py probe` to obtain only a structurally and schema-validated prior manifest, re-hash its dependency paths from the immutable reviewed-head context rather than the caller's checkout, construct the complete candidate key, and use `cache.py lookup` for an exact match. Treat exit code 3 as a miss. Treat corrupt, unreadable, or unwritable cache as unavailable and run required agents fresh; keep the current invocation's iteration state in memory.
 
-Persist at most 64 records keyed by scope identity, with reviewed-state hash, iteration, generation, last aggregate status, and whether reuse or targeted reruns occurred. `cache.py` serializes each read-modify-write transition under a cross-platform lock. When capacity is reached, evict only the least-recently-updated `ready` record; never evict `blocked` or `incomplete` state. If no completed record is evictable, disable persistence for the new scope and keep its state in memory. Pass `--scope-key` to `state-read` when more than one record exists. Rules:
+Persist at most 64 records keyed by scope identity, with reviewed-state hash, iteration, generation, last aggregate status, and whether reuse or targeted reruns occurred. `cache.py` serializes each read-modify-write transition under a cross-platform lock. When capacity is reached, evict the least-recently-updated completed record: either `ready` or terminal iteration-3 `blocked`/`incomplete`. Never evict an active iteration-1 or iteration-2 `blocked`/`incomplete` state. If no completed record is evictable, disable persistence for the new scope and keep its state in memory. Pass `--scope-key` to `state-read` when more than one record exists. Rules:
 
 - new scope: iteration 1
 - identical reviewed-state hash: keep iteration
 - changed reviewed-state hash: increment once
 - changed reviewed-state hash after `ready`: start a new sequence at iteration 1
 - an iteration-3 `blocked` or `incomplete` result ends the current sequence; stop and return control to the caller
-- a later explicit invocation with a changed reviewed-state hash after an iteration-3 result starts a new sequence at iteration 1
+- a later explicit invocation with a changed reviewed-state hash after an iteration-3 result passes `state --start-new-sequence --expected-generation <observed>` and starts at iteration 1
+- reject a changed iteration-3 state without `--start-new-sequence`; reject the flag unless the prior state is terminal iteration 3 and the reviewed-state hash changed
 - an identical reviewed-state hash at iteration 3 keeps iteration 3 and may re-emit validated cached blockers without another model call
 - reuse and targeted-rerun flags accumulate monotonically for the sequence
 - every state write advances a per-scope generation

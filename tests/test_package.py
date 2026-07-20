@@ -82,6 +82,7 @@ class PackageTests(unittest.TestCase):
         self.assertIn("cache.py probe", orchestration)
         self.assertIn("immutable context root", scope)
         self.assertIn("--final-guard-run", orchestration)
+        self.assertIn("--start-new-sequence", orchestration)
         self.assertIn("--expected-generation", orchestration)
         self.assertIn("scope_key", orchestration)
 
