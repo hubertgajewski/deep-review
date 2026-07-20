@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover - exercised on POSIX
 
 SCHEMA_VERSION = 1
 AGENT_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+RULE_ID_RE = re.compile(r"^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$")
 HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 HML_SUMMARY_RE = re.compile(r"^summary: (\d+) high / (\d+) medium / (\d+) low$")
 CHECK_SUMMARY_RE = re.compile(r"^summary: (\d+) pass / (\d+) fail / (\d+) N/A$")
@@ -284,7 +285,7 @@ def validate_key_manifest(value: Any) -> dict[str, Any]:
     return value
 
 
-def validate_hml(text: str) -> dict[str, int]:
+def validate_hml(text: str, allowed_categories: set[str] | None = None) -> dict[str, int]:
     lines = [line.rstrip() for line in text.strip().splitlines() if line.strip()]
     summaries = [(index, HML_SUMMARY_RE.fullmatch(line)) for index, line in enumerate(lines)]
     summaries = [(index, match) for index, match in summaries if match]
@@ -309,6 +310,8 @@ def validate_hml(text: str) -> dict[str, int]:
                 raise CacheError(f"invalid H/M/L finding line: {line}")
             if not fields[1] or not fields[2] or not fields[3] or not fields[4]:
                 raise CacheError("H/M/L finding fields cannot be empty")
+            if allowed_categories is not None and fields[1] not in allowed_categories:
+                raise CacheError(f"H/M/L category is not enabled for this agent: {fields[1]}")
             if any(re.search(r"(?<!\\)\|", field) for field in fields):
                 raise CacheError("literal pipes in H/M/L fields must be escaped as \\|")
             location = re.fullmatch(r"(.+):([1-9]\d*)", fields[2])
@@ -389,7 +392,21 @@ def command_validate_result(args: argparse.Namespace) -> None:
         text = Path(args.file).read_text(encoding="utf-8")
     except OSError as exc:
         raise CacheError(f"cannot read {args.file}: {exc}") from exc
-    counts = validate_hml(text) if args.schema == "hml" else validate_checklist(text)
+    allowed_categories = None
+    if args.allowed_category:
+        if args.schema != "hml":
+            raise CacheError("allowed categories apply only to H/M/L results")
+        if len(args.allowed_category) != len(set(args.allowed_category)):
+            raise CacheError("allowed categories cannot contain duplicates")
+        for category in args.allowed_category:
+            if not RULE_ID_RE.fullmatch(category):
+                raise CacheError(f"invalid namespaced rule category: {category}")
+        allowed_categories = set(args.allowed_category)
+    counts = (
+        validate_hml(text, allowed_categories=allowed_categories)
+        if args.schema == "hml"
+        else validate_checklist(text)
+    )
     print(json.dumps({"schema": args.schema, "counts": counts}, sort_keys=True))
 
 
@@ -655,6 +672,11 @@ def build_parser() -> argparse.ArgumentParser:
     result_parser = subparsers.add_parser("validate-result", help="validate an agent result")
     result_parser.add_argument("--schema", choices=("hml", "checklist"), required=True)
     result_parser.add_argument("--file", required=True)
+    result_parser.add_argument(
+        "--allowed-category",
+        action="append",
+        help="permitted namespaced language-rule category; repeat for every enabled rule",
+    )
     result_parser.set_defaults(handler=command_validate_result)
 
     for name, handler in (("store", command_store), ("lookup", command_lookup), ("probe", command_probe)):

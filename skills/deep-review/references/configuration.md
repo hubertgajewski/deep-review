@@ -4,6 +4,7 @@
 
 - Trusted loading
 - Default configuration
+- Language agents and rules
 - Agent extensions
 - Pattern rules
 
@@ -39,6 +40,12 @@ high_risk = ["**/auth/**", "**/security/**", "**/crypto/**", ".github/workflows/
 docs = ["README*", "docs/**", "AGENTS.md", "CLAUDE.md", ".deep-review/**", "skills/**"]
 ci = [".github/workflows/**", ".gitlab-ci.yml", ".gitlab/ci/**", "**/action.yml", "**/action.yaml", "scripts/**", "**/*.sh"]
 project_checklist = []
+
+[language_agents]
+disabled = []
+
+[language_rules]
+disabled = []
 ```
 
 `max_iterations` values above 3 are invalid. `final_guard` is intentionally not configurable.
@@ -50,6 +57,16 @@ Trusted `large_diff.full_review = true` makes an invocation full by policy; expl
 `triggers.project_checklist` is an optional string array controlling which changed paths activate a trusted `.deep-review/checklist.md`. When the key is absent or the array is empty, a trusted checklist matches every non-generated changed path.
 
 `cache_dir` must resolve beneath the repository and must already be ignored by Git. This source repository ignores the default; each consuming repository must also ignore whichever cache path it uses. An unignored, external, symlinked, or unwritable cache path disables persistence for that invocation. Treat records as trusted local state; never restore this directory from an untrusted CI artifact or share it with jobs, forks, or users that can write it.
+
+## Language agents and rules
+
+The built-in language agents are `typescript`, `python`, and `swift`. They are enabled by default and dispatch only for matching changed paths. `language_agents.disabled` is a string array of agent names. `language_rules.disabled` is a string array of complete namespaced rule IDs such as `typescript.no-explicit-any`.
+
+Both arrays default to empty. Reject non-string items, duplicates, unknown agent names, unknown rule IDs, and unknown keys within either table. Report the configuration error and make the aggregate `incomplete`; never ignore or guess an invalid entry. Disabling an agent makes all its rules inactive. Listing one of that agent's rules as disabled as well is redundant but valid.
+
+Language paths and rule catalogs are package-owned and cannot be replaced by consumer configuration. Each matching language is dispatched once with only its enabled rule fragments, in the order declared by its built-in agent prompt. If an agent is disabled, emit `SKIPPED: disabled by trusted configuration`. If every rule is disabled, emit `SKIPPED: all rules disabled by trusted configuration`. A disabled rule is not reassigned to a general or consumer agent.
+
+All language rules use the global H/M/L blocking policy. Consumers may disable a rule, but cannot redefine its instructions, severity guidance, output schema, or safety constraints.
 
 ## Agent extensions
 
@@ -72,7 +89,7 @@ references:
 ---
 ```
 
-The body is the trusted reviewer instruction. `domain` is a unique extension-specialty label, while core prompt ownership always takes precedence when subjects overlap. `applies_to` supplies deterministic triggers, and every path declared in `references` must exist at the trusted revision and be included in the trusted prompt bundle. Names use lowercase letters, digits, and hyphens. `prompt_scope` is `full` or `matched`; `output_schema` is `hml` or `checklist`. Reject missing or unknown fields that affect readiness, unsafe or unavailable reference paths, duplicate extension domains, domains equal to a core agent name, and attempts to replace shared rules.
+The body is the trusted reviewer instruction. `domain` is a unique extension-specialty label, while built-in prompt ownership always takes precedence when subjects overlap. `applies_to` supplies deterministic triggers, and every path declared in `references` must exist at the trusted revision and be included in the trusted prompt bundle. Names use lowercase letters, digits, and hyphens. `prompt_scope` is `full` or `matched`; `output_schema` is `hml` or `checklist`. Reject missing or unknown fields that affect readiness, unsafe or unavailable reference paths, duplicate extension domains, names or domains equal to a built-in agent or language-rule namespace, and attempts to replace shared rules.
 
 ## Pattern rules
 

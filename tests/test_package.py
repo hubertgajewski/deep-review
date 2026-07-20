@@ -24,7 +24,8 @@ class PackageTests(unittest.TestCase):
             "references/providers/gitlab.md",
         ]
         required.extend(f"references/agents/{name}.md" for name in (
-            "architecture", "ci", "code", "docs", "project-checklist", "security", "simplification"
+            "architecture", "ci", "code", "docs", "project-checklist", "python", "security",
+            "simplification", "swift", "typescript"
         ))
         for relative in required:
             self.assertTrue((SKILL / relative).is_file(), relative)
@@ -53,7 +54,7 @@ class PackageTests(unittest.TestCase):
         }
         agents = {path.stem: path for path in (SKILL / "references" / "agents").glob("*.md")}
         self.assertEqual(set(roster), set(agents))
-        self.assertEqual(len(roster), 7)
+        self.assertEqual(len(roster), 10)
         for name, (scope, schema) in roster.items():
             agent = agents[name]
             text = agent.read_text(encoding="utf-8")
@@ -137,6 +138,119 @@ class PackageTests(unittest.TestCase):
         self.assertIn("project_checklist = []", config)
         self.assertIn("orchestrator-owned transport metadata", contract)
         self.assertIn("duplicates another extension domain", contract)
+
+    def test_language_rule_catalogs_are_complete_and_unique(self) -> None:
+        expected = {
+            "typescript": (
+                "typescript.no-explicit-any",
+                "typescript.unsafe-type-assertion",
+                "typescript.unsafe-non-null-assertion",
+                "typescript.non-exhaustive-union",
+                "typescript.unhandled-promise",
+            ),
+            "python": (
+                "python.mutable-default",
+                "python.bare-exception-handler",
+                "python.runtime-assert",
+            ),
+            "swift": (
+                "swift.unsafe-force-unwrap",
+                "swift.unsafe-force-cast",
+                "swift.actor-isolation",
+                "swift.sendable-boundary",
+                "swift.unstructured-task-lifetime",
+                "swift.continuation-resume",
+            ),
+        }
+        expected_patterns = {
+            "typescript": ("**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"),
+            "python": ("**/*.py", "**/*.pyi"),
+            "swift": ("**/*.swift", "Package.swift"),
+        }
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
+        seen: set[str] = set()
+        for language, rule_ids in expected.items():
+            agent = (SKILL / "references" / "agents" / f"{language}.md").read_text(encoding="utf-8")
+            patterns = tuple(re.findall(r'^  - "([^"]+)"$', agent, re.MULTILINE))
+            self.assertEqual(patterns, expected_patterns[language])
+            for pattern in patterns:
+                self.assertIn(f"`{pattern}`", orchestration)
+            declared = tuple(re.findall(rf"^  - ({language}\.[a-z0-9-]+)$", agent, re.MULTILINE))
+            self.assertEqual(declared, rule_ids)
+            for rule_id in rule_ids:
+                self.assertNotIn(rule_id, seen)
+                seen.add(rule_id)
+                suffix = rule_id.split(".", 1)[1]
+                fragment = SKILL / "references" / "language-rules" / language / f"{suffix}.md"
+                self.assertTrue(fragment.is_file(), rule_id)
+                text = fragment.read_text(encoding="utf-8")
+                self.assertRegex(text, rf"(?m)^rule_id: {re.escape(rule_id)}$")
+                self.assertIn("Public reference", text)
+                self.assertIn("Recommend", text)
+                self.assertIn(rule_id, readme)
+
+        fragments = list((SKILL / "references" / "language-rules").glob("*/*.md"))
+        self.assertEqual(len(fragments), len(seen))
+
+    def test_language_prompts_are_repository_neutral_and_exclude_general_dead_code(self) -> None:
+        paths = [
+            SKILL / "references" / "agents" / f"{language}.md"
+            for language in ("typescript", "python", "swift")
+        ]
+        paths.extend((SKILL / "references" / "language-rules").glob("*/*.md"))
+        combined = "\n".join(path.read_text(encoding="utf-8") for path in paths).lower()
+        for repository_term in ("orwellstat", "meow & purr", "meowandpurr", "playwright", "bruno"):
+            self.assertNotIn(repository_term, combined)
+
+        swift = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in paths
+            if path.name == "swift.md" or "language-rules/swift" in path.as_posix()
+        ).lower()
+        for platform_term in (
+            "swiftui", "webkit", "xcode", "human interface guidelines", "application sandbox",
+            "localization", "project verification"
+        ):
+            self.assertNotIn(platform_term, swift)
+
+        for language in ("typescript", "python", "swift"):
+            agent = (SKILL / "references" / "agents" / f"{language}.md").read_text(encoding="utf-8")
+            self.assertIn("dead imports", agent)
+            self.assertRegex(agent, r"unused (?:variables or )?symbols")
+
+        fragments = "\n".join(
+            path.read_text(encoding="utf-8").lower()
+            for path in (SKILL / "references" / "language-rules").glob("*/*.md")
+        )
+        self.assertNotIn("unused import", fragments)
+        self.assertNotIn("unused variable", fragments)
+
+    def test_language_configuration_and_dispatch_contracts_are_explicit(self) -> None:
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
+        output = (SKILL / "references" / "output-schemas.md").read_text(encoding="utf-8")
+        main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        for token in (
+            "[language_agents]", "[language_rules]", "disabled = []", "unknown agent names",
+            "unknown rule IDs", "duplicates", "aggregate `incomplete`"
+        ):
+            self.assertIn(token, config)
+        self.assertIn("only the enabled rule fragments", orchestration)
+        self.assertIn("Never include a disabled fragment", orchestration)
+        self.assertIn("--allowed-category", orchestration)
+        self.assertIn("Dispatch each matching language at most once", main)
+        self.assertIn("SKIPPED: language trigger did not match", main)
+        self.assertIn("disabled or unknown rule category is malformed", main)
+        self.assertIn("exact namespaced rule IDs enabled", output)
+        self.assertIn("config_hash", orchestration)
+        self.assertIn("agent_prompt_hash", orchestration)
+        for rule_id in (
+            "typescript.no-explicit-any", "python.mutable-default", "swift.actor-isolation"
+        ):
+            self.assertIn(rule_id, readme)
 
         scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
         self.assertIn("Reject symlinks for every agent-readable", scope)

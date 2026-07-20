@@ -25,6 +25,8 @@ summary: <N> high / <N> medium / <N> low
 
 Recount the body. A mismatch is malformed output.
 
+For a built-in language agent, `<category>` must equal one of the exact namespaced rule IDs enabled for that invocation, such as `typescript.no-explicit-any`. Validate against the effective enabled set before aggregation and caching. An unknown, disabled, or cross-language category is malformed even when the five-field syntax and summary counts are otherwise valid.
+
 ## Checklist
 
 Emit one line per applicable item:
