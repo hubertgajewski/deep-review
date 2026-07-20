@@ -24,8 +24,8 @@ class PackageTests(unittest.TestCase):
             "references/providers/gitlab.md",
         ]
         required.extend(f"references/agents/{name}.md" for name in (
-            "architecture", "ci", "code", "docs", "project-checklist", "python", "security",
-            "simplification", "swift", "typescript"
+            "architecture", "ci", "code", "docs", "java", "javascript", "project-checklist",
+            "python", "security", "simplification", "swift", "typescript"
         ))
         for relative in required:
             self.assertTrue((SKILL / relative).is_file(), relative)
@@ -54,7 +54,7 @@ class PackageTests(unittest.TestCase):
         }
         agents = {path.stem: path for path in (SKILL / "references" / "agents").glob("*.md")}
         self.assertEqual(set(roster), set(agents))
-        self.assertEqual(len(roster), 10)
+        self.assertEqual(len(roster), 12)
         for name, (scope, schema) in roster.items():
             agent = agents[name]
             text = agent.read_text(encoding="utf-8")
@@ -161,11 +161,29 @@ class PackageTests(unittest.TestCase):
                 "swift.unstructured-task-lifetime",
                 "swift.continuation-resume",
             ),
+            "java": (
+                "java.null-unboxing",
+                "java.unchecked-cast",
+                "java.unsafe-optional-get",
+                "java.equals-hashcode-contract",
+                "java.autocloseable-lifetime",
+                "java.unsafe-finally",
+            ),
+            "javascript": (
+                "javascript.unsafe-optional-chaining",
+                "javascript.loss-of-precision",
+                "javascript.unsafe-finally",
+                "javascript.async-promise-executor",
+                "javascript.async-foreach",
+                "javascript.unhandled-promise",
+            ),
         }
         expected_patterns = {
             "typescript": ("**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"),
             "python": ("**/*.py", "**/*.pyi"),
             "swift": ("**/*.swift", "Package.swift"),
+            "java": ("**/*.java",),
+            "javascript": ("**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"),
         }
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
@@ -196,7 +214,7 @@ class PackageTests(unittest.TestCase):
     def test_language_prompts_are_repository_neutral_and_exclude_general_dead_code(self) -> None:
         paths = [
             SKILL / "references" / "agents" / f"{language}.md"
-            for language in ("typescript", "python", "swift")
+            for language in ("typescript", "python", "swift", "java", "javascript")
         ]
         paths.extend((SKILL / "references" / "language-rules").glob("*/*.md"))
         combined = "\n".join(path.read_text(encoding="utf-8") for path in paths).lower()
@@ -214,7 +232,7 @@ class PackageTests(unittest.TestCase):
         ):
             self.assertNotIn(platform_term, swift)
 
-        for language in ("typescript", "python", "swift"):
+        for language in ("typescript", "python", "swift", "java", "javascript"):
             agent = (SKILL / "references" / "agents" / f"{language}.md").read_text(encoding="utf-8")
             self.assertIn("dead imports", agent)
             self.assertRegex(agent, r"unused (?:variables or )?symbols")
@@ -238,6 +256,8 @@ class PackageTests(unittest.TestCase):
             "unknown rule IDs", "duplicates", "aggregate `incomplete`"
         ):
             self.assertIn(token, config)
+        for language in ("typescript", "python", "swift", "java", "javascript"):
+            self.assertIn(f"`{language}`", config)
         self.assertIn("only the enabled rule fragments", orchestration)
         self.assertIn("Never include a disabled fragment", orchestration)
         self.assertIn("--allowed-category", orchestration)
@@ -248,7 +268,8 @@ class PackageTests(unittest.TestCase):
         self.assertIn("config_hash", orchestration)
         self.assertIn("agent_prompt_hash", orchestration)
         for rule_id in (
-            "typescript.no-explicit-any", "python.mutable-default", "swift.actor-isolation"
+            "typescript.no-explicit-any", "python.mutable-default", "swift.actor-isolation",
+            "java.null-unboxing", "javascript.unsafe-optional-chaining"
         ):
             self.assertIn(rule_id, readme)
 
@@ -260,12 +281,28 @@ class PackageTests(unittest.TestCase):
         fixture = ROOT / "tests" / "fixtures" / "consumer" / ".deep-review"
         self.assertTrue((fixture / "config.toml").is_file())
         self.assertTrue((fixture / "checklist.md").is_file())
-        agent = (fixture / "agents" / "java.md").read_text(encoding="utf-8")
+        agent = (fixture / "agents" / "cobol.md").read_text(encoding="utf-8")
         for field in (
             "name:", "domain:", "applies_to:", "prompt_scope:", "output_schema:", "blocking:", "references:"
         ):
             self.assertIn(field, agent)
-        self.assertTrue((ROOT / "tests" / "fixtures" / "consumer" / "docs" / "java-guidelines.md").is_file())
+        self.assertIn('name: cobol', agent)
+        self.assertIn('docs/cobol-guidelines.md', agent)
+        self.assertTrue((fixture.parent / "docs" / "cobol-guidelines.md").is_file())
+        self.assertTrue((fixture.parent / "src" / "batch" / "CustomerReport.cbl").is_file())
+
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        self.assertIn("name: cobol", config)
+        self.assertNotRegex(config, r"(?m)^name: java$")
+
+    def test_javascript_promise_rule_precedence_is_explicit(self) -> None:
+        rules = SKILL / "references" / "language-rules" / "javascript"
+        unhandled = (rules / "unhandled-promise.md").read_text(encoding="utf-8")
+        for specific in (
+            "javascript.async-promise-executor",
+            "javascript.async-foreach",
+        ):
+            self.assertIn(specific, unhandled)
 
     def test_cache_is_ignored(self) -> None:
         ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()

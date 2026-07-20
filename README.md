@@ -5,7 +5,7 @@ Git references, GitHub pull requests, and GitLab merge requests.
 
 ## Language reviewers
 
-Matching TypeScript, Python, and Swift changes receive one repository-neutral language review in addition to the general review roster. Language agents own only their documented language-semantic rules; general concerns such as dead imports, unused symbols, runtime correctness, security, architecture, and simplification remain with their existing agents.
+Matching TypeScript, Python, Swift, Java, and JavaScript changes receive one repository-neutral language review in addition to the general review roster. Language agents own only their documented language-semantic rules; general concerns such as dead imports, unused symbols, runtime correctness, security, architecture, and simplification remain with their existing agents.
 
 All language agents and rules are enabled by default. Consumers can disable a complete agent or individual rule in the trusted `.deep-review/config.toml`:
 
@@ -22,6 +22,8 @@ Supported rule IDs:
 - TypeScript: `typescript.no-explicit-any`, `typescript.unsafe-type-assertion`, `typescript.unsafe-non-null-assertion`, `typescript.non-exhaustive-union`, `typescript.unhandled-promise`
 - Python: `python.mutable-default`, `python.bare-exception-handler`, `python.runtime-assert`
 - Swift: `swift.unsafe-force-unwrap`, `swift.unsafe-force-cast`, `swift.actor-isolation`, `swift.sendable-boundary`, `swift.unstructured-task-lifetime`, `swift.continuation-resume`
+- Java: `java.null-unboxing`, `java.unchecked-cast`, `java.unsafe-optional-get`, `java.equals-hashcode-contract`, `java.autocloseable-lifetime`, `java.unsafe-finally`
+- JavaScript: `javascript.unsafe-optional-chaining`, `javascript.loss-of-precision`, `javascript.unsafe-finally`, `javascript.async-promise-executor`, `javascript.async-foreach`, `javascript.unhandled-promise`
 
 Unknown or duplicate disable entries make the review incomplete instead of being ignored. Disabled rule fragments are excluded from the effective agent prompt.
 

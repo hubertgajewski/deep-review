@@ -30,6 +30,8 @@ Every dispatched agent receives `CHANGED_FILES`, even when its inline matched di
 - typescript: dispatch once for `**/*.ts`, `**/*.tsx`, `**/*.mts`, or `**/*.cts` when the agent and at least one rule are enabled
 - python: dispatch once for `**/*.py` or `**/*.pyi` when the agent and at least one rule are enabled
 - swift: dispatch once for `**/*.swift` or exact `Package.swift` when the agent and at least one rule are enabled
+- java: dispatch once for `**/*.java` when the agent and at least one rule are enabled
+- javascript: dispatch once for `**/*.js`, `**/*.jsx`, `**/*.mjs`, or `**/*.cjs` when the agent and at least one rule are enabled
 
 Consumer agent `applies_to` patterns are deterministic path triggers. New matching agents run even if they were skipped in the previous iteration.
 

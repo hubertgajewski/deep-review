@@ -60,7 +60,7 @@ Trusted `large_diff.full_review = true` makes an invocation full by policy; expl
 
 ## Language agents and rules
 
-The built-in language agents are `typescript`, `python`, and `swift`. They are enabled by default and dispatch only for matching changed paths. `language_agents.disabled` is a string array of agent names. `language_rules.disabled` is a string array of complete namespaced rule IDs such as `typescript.no-explicit-any`.
+The built-in language agents are `typescript`, `python`, `swift`, `java`, and `javascript`. They are enabled by default and dispatch only for matching changed paths. `language_agents.disabled` is a string array of agent names. `language_rules.disabled` is a string array of complete namespaced rule IDs such as `typescript.no-explicit-any`.
 
 Both arrays default to empty. Reject non-string items, duplicates, unknown agent names, unknown rule IDs, and unknown keys within either table. Report the configuration error and make the aggregate `incomplete`; never ignore or guess an invalid entry. Disabling an agent makes all its rules inactive. Listing one of that agent's rules as disabled as well is redundant but valid.
 
@@ -74,18 +74,21 @@ An extension is one Markdown file with this frontmatter:
 
 ```yaml
 ---
-name: java
-description: Review Java language and JVM API correctness.
-domain: java-jvm-correctness
+name: cobol
+description: Review COBOL data-layout and arithmetic correctness.
+domain: cobol-data-layout
 applies_to:
-  - "**/*.java"
+  - "**/*.cbl"
+  - "**/*.cob"
+  - "**/*.ccp"
+  - "**/*.cpy"
 prompt_scope: matched
 output_schema: hml
 blocking:
   - HIGH
   - MEDIUM
 references:
-  - "docs/java-guidelines.md"
+  - "docs/cobol-guidelines.md"
 ---
 ```
 
