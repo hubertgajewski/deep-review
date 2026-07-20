@@ -24,6 +24,6 @@ Validate the number as digits, both recorded identities as full object IDs, and 
 
 Normalize `body` as the untrusted description, `baseRefOid` as trusted-policy revision, and `headRefOid` as head identity. Three-dot Git diff semantics produce the aggregate pull-request diff from the verified commit graph. Compare the recorded base SHA with the selected remote branch using `git ls-remote <remote> refs/heads/<baseRefName>`. On drift, report `base drift: recorded <SHA> / remote <SHA>` with both full values. If comparison is unavailable, report `base drift: unverified`. Continue reviewing the diff derived from the provider-recorded identities in either case.
 
-For surrounding context, fetch `refs/pull/<number>/head` into a temporary detached worktree when `headRefOid` is absent locally, then verify the detached `HEAD` equals `headRefOid`. Never inspect the caller's unrelated checkout as remote-head context.
+For surrounding context, create a temporary detached worktree directly from the already fetched and verified `headRefOid`, then verify the detached `HEAD` equals `headRefOid`. Never inspect the caller's unrelated checkout as remote-head context.
 
 Any CLI, auth, metadata, JSON, or diff failure terminates remote scope resolution. Never substitute local changes.

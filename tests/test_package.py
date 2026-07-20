@@ -113,6 +113,9 @@ class PackageTests(unittest.TestCase):
             self.assertIn("never use a change-number-based patch", text)
             self.assertIn("git check-ref-format --branch", text)
             self.assertIn("full object IDs", text)
+            self.assertIn("already fetched and verified", text)
+            self.assertNotIn("when `headRefOid` is absent locally", text)
+            self.assertNotIn("when the recorded head SHA is absent locally", text)
         self.assertIn("original and effective character counts", scope)
 
         github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")

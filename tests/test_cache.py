@@ -727,6 +727,9 @@ class CacheStorageTests(unittest.TestCase):
             argparse.Namespace(repo_root=str(self.root), cache_dir=".deep-review-cache")
         )
         self.assertFalse(self.cache_dir.exists())
+        CACHE.command_clear(
+            argparse.Namespace(repo_root=str(self.root), cache_dir=".deep-review-cache")
+        )
         self.assertEqual(marker.read_text(encoding="utf-8"), "keep")
 
 

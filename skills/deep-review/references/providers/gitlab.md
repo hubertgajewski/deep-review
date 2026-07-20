@@ -26,6 +26,6 @@ Normalize JSON fields `description`, `title`, `target_branch`, `source_branch`, 
 
 Use the recorded base SHA as trusted-policy revision. Compare it with the selected remote target branch using `git ls-remote <remote> refs/heads/<target_branch>`. On drift, report `base drift: recorded <SHA> / remote <SHA>` with both full values. If comparison is unavailable, report `base drift: unverified`. Continue reviewing the diff derived from the provider-recorded identities in either case.
 
-For surrounding context, fetch `refs/merge-requests/<number>/head` into a temporary detached worktree when the recorded head SHA is absent locally, then verify the detached `HEAD` equals that SHA. Never inspect the caller's unrelated checkout as remote-head context.
+For surrounding context, create a temporary detached worktree directly from the already fetched and verified recorded head SHA, then verify the detached `HEAD` equals that SHA. Never inspect the caller's unrelated checkout as remote-head context.
 
 Any CLI, auth, metadata, JSON, or diff failure terminates remote scope resolution. Never substitute local changes.

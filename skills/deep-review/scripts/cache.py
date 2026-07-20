@@ -35,6 +35,7 @@ CHECK_SUMMARY_RE = re.compile(r"^summary: (\d+) pass / (\d+) fail / (\d+) N/A$")
 CHECK_ITEM_RE = re.compile(r"^- \[(pass|fail|N/A)\] ([^:]+): (.+)$")
 CHECK_FAILURE_RE = re.compile(r"^([1-9]\d*)\. (.+):([1-9]\d*) (.+)$")
 MAX_SCOPE_STATES = 64
+_MISSING_JSON = object()
 KEY_FIELDS = {
     "schema_version",
     "agent",
@@ -67,10 +68,14 @@ def fail(message: str, code: int = 2) -> None:
     raise SystemExit(code)
 
 
-def read_json(path: Path) -> Any:
+def read_json(path: Path, *, missing_ok: bool = False) -> Any:
     try:
         with path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
+    except FileNotFoundError as exc:
+        if missing_ok:
+            return _MISSING_JSON
+        raise CacheError(f"cannot read valid JSON from {path}: {exc}") from exc
     except (OSError, json.JSONDecodeError) as exc:
         raise CacheError(f"cannot read valid JSON from {path}: {exc}") from exc
 
@@ -445,9 +450,10 @@ def read_agent_record(args: argparse.Namespace) -> dict[str, Any]:
     validate_agent(args.agent)
     cache_dir = safe_cache_dir(args.repo_root, args.cache_dir)
     record_path = cache_dir / "agents" / f"{args.agent}.json"
-    if not record_path.is_file():
+    record = read_json(record_path, missing_ok=True)
+    if record is _MISSING_JSON:
         raise SystemExit(3)
-    return validate_cached_record(read_json(record_path), args.agent)
+    return validate_cached_record(record, args.agent)
 
 
 def command_probe(args: argparse.Namespace) -> None:
@@ -492,9 +498,9 @@ def validate_state_record(value: Any) -> dict[str, Any]:
 
 
 def read_scope_states(state_path: Path) -> dict[str, dict[str, Any]]:
-    if not state_path.is_file():
+    value = read_json(state_path, missing_ok=True)
+    if value is _MISSING_JSON:
         return {}
-    value = read_json(state_path)
     if isinstance(value, dict) and set(value) == {"schema_version", "states"}:
         if value["schema_version"] != SCHEMA_VERSION or not isinstance(value["states"], dict):
             raise CacheError("cached convergence state store is invalid")
@@ -626,11 +632,12 @@ def command_state_read(args: argparse.Namespace) -> None:
 
 def command_clear(args: argparse.Namespace) -> None:
     cache_dir = safe_cache_dir(args.repo_root, args.cache_dir)
-    if cache_dir.exists():
-        try:
-            shutil.rmtree(cache_dir)
-        except OSError as exc:
-            raise CacheError(f"cannot clear cache directory {cache_dir}: {exc}") from exc
+    try:
+        shutil.rmtree(cache_dir)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise CacheError(f"cannot clear cache directory {cache_dir}: {exc}") from exc
 
 
 def build_parser() -> argparse.ArgumentParser:
