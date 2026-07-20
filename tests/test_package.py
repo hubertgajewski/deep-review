@@ -329,14 +329,24 @@ class PackageTests(unittest.TestCase):
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         claude = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
         license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+        installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
         self.assertIn("review-only Agent Skill", readme)
         self.assertIn("does not edit consumer source files", readme)
         self.assertNotIn("Disabling automatic pipelines", readme)
+        for invocation in (
+            "/deep-review --base main", "$deep-review --base main",
+            "@skills:deep-review --base main", "@deep-review --base main",
+        ):
+            self.assertIn(invocation, readme)
+            self.assertIn(invocation, installation)
         self.assertIn("Disable automatic pipelines", maintainers)
         self.assertIn("user-facing installation", agents)
         self.assertIn("@AGENTS.md", claude)
         self.assertIn("MIT License", license_text)
         self.assertIn("Copyright (c) 2026 Hubert Gajewski", license_text)
+        self.assertIn("Turn on confidentiality", security)
+        self.assertNotIn("This issue is confidential", security)
 
     def test_installation_clients_are_alphabetical_and_complete(self) -> None:
         installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")

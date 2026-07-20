@@ -56,6 +56,34 @@ The `~` notation in the client table means the current user's home directory. It
 
 For WSL, `$HOME` is the Linux home directory inside the selected distribution, not the Windows `%USERPROFILE%` directory. Install the skill in the environment where the client process runs.
 
+## Invoke Deep Review
+
+Naming the skill in natural language is the portable form:
+
+```text
+Use the deep-review skill to review my current repository changes.
+```
+
+Some clients provide an explicit mention or command syntax:
+
+| Client | Explicit invocation | Skill discovery or selection |
+| --- | --- | --- |
+| Claude Code | `/deep-review --base main` | Type `/` to find installed skills. |
+| Codex CLI and IDE | `$deep-review --base main` | Type `$` to mention a skill, or open `/skills`. |
+| Devin | `@skills:deep-review --base main` | Devin uses the `@skills:<name>` namespace. |
+| Windsurf Cascade | `@deep-review --base main` | Type `@` to mention the skill. |
+
+Do not assume `/`, `$`, and `@` are interchangeable. For clients not listed above, use natural language or the discovery mechanism linked in the client table. T3 Code follows the invocation behavior of its active provider.
+
+Scope selectors and modifiers are appended after the client-specific invocation token. For example:
+
+```text
+/deep-review --gitlab-mr 123
+$deep-review --path src/payments
+@deep-review --focus "pay particular attention to retry behavior"
+@skills:deep-review --range release..HEAD
+```
+
 ## AI client locations
 
 Clients are listed alphabetically. Locations and links were verified against first-party documentation on 2026-07-20. Product support changes quickly, so consult the linked source if discovery fails.

@@ -8,7 +8,7 @@ Until versioned releases are published, only the current default branch is suppo
 
 Do not disclose a suspected vulnerability in a public issue, merge request, discussion, or chat.
 
-Create a [new GitLab issue](https://gitlab.com/hubertgajewski-ai/deep-review/-/issues/new), select **This issue is confidential**, and verify that GitLab marks it confidential before submitting technical details. If the confidential option is unavailable, contact the maintainer through their [GitLab profile](https://gitlab.com/hubertgajewski) and request a private reporting channel without including vulnerability details in the first message.
+Create a [new GitLab issue](https://gitlab.com/hubertgajewski-ai/deep-review/-/issues/new), select **Turn on confidentiality**, and verify that GitLab marks the issue confidential before submitting technical details. If the confidentiality option is unavailable, contact the maintainer through their [GitLab profile](https://gitlab.com/hubertgajewski) and request a private reporting channel without including vulnerability details in the first message.
 
 Include, where possible:
 

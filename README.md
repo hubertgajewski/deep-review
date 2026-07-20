@@ -24,6 +24,20 @@ Deep Review reviews code; it does not edit consumer source files or apply fixes.
 Use the deep-review skill to review my current repository changes.
 ```
 
+### Invoking Deep Review
+
+Invocation syntax depends on the client:
+
+| Client | Example |
+| --- | --- |
+| Portable natural language | `Use the deep-review skill to review my current changes.` |
+| Claude Code | `/deep-review --base main` |
+| Codex CLI and IDE | `$deep-review --base main` |
+| Devin | `@skills:deep-review --base main` |
+| Windsurf Cascade | `@deep-review --base main` |
+
+If a client has no documented explicit syntax, name the skill in natural language or select it from the client's skills menu. The scope options below follow whichever invocation form the client supports.
+
 Common scopes include:
 
 ```text
