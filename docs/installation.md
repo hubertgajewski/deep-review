@@ -40,11 +40,30 @@ if [ -e "$review_destination" ] || [ -L "$review_destination" ]; then
   exit 1
 fi
 
-git init -q "$review_source"
-git -C "$review_source" remote add origin https://gitlab.com/hubertgajewski-ai/deep-review.git
-git -C "$review_source" fetch --depth 1 origin "$deep_review_ref"
-git -C "$review_source" checkout --detach FETCH_HEAD
-test "$(git -C "$review_source" rev-parse HEAD)" = "$deep_review_ref"
+if ! git init -q "$review_source"; then
+  echo "git init failed" >&2
+  exit 1
+fi
+if ! git -C "$review_source" remote add origin https://gitlab.com/hubertgajewski-ai/deep-review.git; then
+  echo "git remote add failed" >&2
+  exit 1
+fi
+if ! git -C "$review_source" fetch --depth 1 origin "$deep_review_ref"; then
+  echo "git fetch failed" >&2
+  exit 1
+fi
+if ! git -C "$review_source" checkout --detach FETCH_HEAD; then
+  echo "git checkout failed" >&2
+  exit 1
+fi
+if ! resolved_commit="$(git -C "$review_source" rev-parse HEAD)"; then
+  echo "git rev-parse failed" >&2
+  exit 1
+fi
+if [ "$resolved_commit" != "$deep_review_ref" ]; then
+  echo "fetched commit does not match deep_review_ref" >&2
+  exit 1
+fi
 mkdir -p .agents/skills
 cp -R "$review_source/skills/deep-review" "$review_destination"
 ```
