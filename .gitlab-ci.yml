@@ -21,8 +21,10 @@ test:
   stage: test
   parallel:
     matrix:
-      - PYTHON_VERSION: ["3.10", "3.14"]
-  image: "python:${PYTHON_VERSION}-slim"
+      - PYTHON_IMAGE:
+          - "python:3.10-slim@sha256:c1e4e6c01eb489c422288b2de34b0761ca316f7a2d98e2c33f47659a73ed108a"
+          - "python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6"
+  image: "$PYTHON_IMAGE"
   interruptible: true
   timeout: 5m
   script:
