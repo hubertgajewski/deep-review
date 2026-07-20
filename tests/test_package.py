@@ -338,15 +338,24 @@ class PackageTests(unittest.TestCase):
         contract = (SKILL / "references" / "agent-contract.md").read_text(encoding="utf-8")
         orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
         groovy = (SKILL / "references" / "agents" / "groovy.md").read_text(encoding="utf-8")
+        kotlin = (SKILL / "references" / "agents" / "kotlin.md").read_text(encoding="utf-8")
         ci = (SKILL / "references" / "agents" / "ci.md").read_text(encoding="utf-8")
-        self.assertIn('"Jenkinsfile"', config)
+        ci_trigger = next(line for line in config.splitlines() if line.startswith("ci = "))
+        self.assertIn('"Jenkinsfile"', ci_trigger)
+        self.assertIn('"**/*.groovy"', ci_trigger)
         for language in ("groovy", "kotlin"):
             self.assertIn(f"`{language}`", config)
         self.assertIn("equals a built-in agent name or language-rule namespace", contract)
         self.assertIn("`build.gradle` as Groovy", orchestration)
         self.assertIn("`build.gradle.kts` as Kotlin", orchestration)
-        self.assertIn("dispatches both the Groovy language agent and the CI agent", orchestration)
-        self.assertIn("Defer Gradle and Jenkins DSL APIs", groovy)
+        self.assertIn("Any changed `**/*.groovy` path dispatches both", orchestration)
+        self.assertIn("A Groovy suffix alone is not evidence", ci)
+        self.assertIn("custom Pipeline Script Paths", config)
+        self.assertIn("non-Groovy Shared Library resources", config)
+        for agent in (groovy, kotlin):
+            self.assertIn("code reviewer", agent)
+            self.assertIn("security reviewer", agent)
+            self.assertIn("CI reviewer", agent)
         self.assertIn("Jenkins Pipelines", ci)
 
     def test_cache_is_ignored(self) -> None:

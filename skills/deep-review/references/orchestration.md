@@ -25,7 +25,7 @@ Every dispatched agent receives `CHANGED_FILES`, even when its inline matched di
 - code, architecture, simplification: always
 - security: dispatch for executable/source/config/dependency/CI paths, sensitive path components, credential-shaped added assignments, or untracked content not clearly docs/generated/test-only
 - docs: dispatch for new paths, documentation, assistant/skill policy, configuration examples, CI files, or newly introduced environment/configuration names
-- CI: dispatch for `.github/workflows/**`, `.gitlab-ci.yml`, `.gitlab/ci/**`, action metadata, shell files, automation scripts, or exact root `Jenkinsfile`
+- CI: dispatch for `.github/workflows/**`, `.gitlab-ci.yml`, `.gitlab/ci/**`, action metadata, shell files, automation scripts, exact root `Jenkinsfile`, or `**/*.groovy`
 - project-checklist: dispatch only when a trusted checklist exists and its trusted patterns match; when patterns are absent, match every non-generated changed path
 - typescript: dispatch once for `**/*.ts`, `**/*.tsx`, `**/*.mts`, or `**/*.cts` when the agent and at least one rule are enabled
 - python: dispatch once for `**/*.py` or `**/*.pyi` when the agent and at least one rule are enabled
@@ -35,7 +35,9 @@ Every dispatched agent receives `CHANGED_FILES`, even when its inline matched di
 - groovy: dispatch once for `**/*.groovy`, `**/*.gradle`, or exact root `Jenkinsfile` when the agent and at least one rule are enabled
 - kotlin: dispatch once for `**/*.kt` or `**/*.kts` when the agent and at least one rule are enabled
 
-Treat `build.gradle` as Groovy and `build.gradle.kts` as Kotlin; the latter matches `**/*.kts`, not `**/*.gradle`. A changed root `Jenkinsfile` dispatches both the Groovy language agent and the CI agent. Groovy owns only its enabled language-semantic rules there; Jenkins pipeline trust, credentials, execution policy, and other CI concerns remain CI ownership.
+Treat `build.gradle` as Groovy and `build.gradle.kts` as Kotlin; the latter matches `**/*.kts`, not `**/*.gradle`. Gradle DSL and build-logic correctness remain code-review ownership, while Groovy and Kotlin own only their enabled language-semantic rules.
+
+Any changed `**/*.groovy` path dispatches both the Groovy language agent and the CI agent. This conservative overlap covers Jenkins Shared Library sources without treating a Groovy suffix as finding evidence: CI must demonstrate Jenkins Pipeline or Shared Library execution context and ignore ordinary Groovy application code. A changed root `Jenkinsfile` therefore dispatches both agents as well. Groovy owns only its enabled language-semantic rules there; Jenkins pipeline trust, credentials, execution policy, and other CI concerns remain CI ownership. Repository-specific Pipeline Script Paths and non-Groovy Shared Library resources cannot be inferred from a standard suffix and must be listed in trusted `triggers.ci`.
 
 Consumer agent `applies_to` patterns are deterministic path triggers. New matching agents run even if they were skipped in the previous iteration.
 
