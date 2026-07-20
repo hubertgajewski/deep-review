@@ -20,13 +20,29 @@ The portable project location is `.agents/skills/`, supported by many—but not 
 
 ### Linux and macOS
 
-From the consuming repository root:
+Choose the exact lowercase, 40-character commit SHA you reviewed in the upstream repository. Do not substitute a branch name or an unverified tag. Then, from the consuming repository root:
 
 ```bash
+deep_review_ref="<reviewed-40-character-commit-sha>"
+review_destination=".agents/skills/deep-review"
 review_source="$(mktemp -d)"
-git clone --depth 1 https://gitlab.com/hubertgajewski-ai/deep-review.git "$review_source"
+
+if ! printf '%s\n' "$deep_review_ref" | grep -Eq '^[0-9a-f]{40}$'; then
+  echo "deep_review_ref must be a lowercase, 40-character commit SHA" >&2
+  exit 1
+fi
+if [ -e "$review_destination" ] || [ -L "$review_destination" ]; then
+  echo "$review_destination already exists; review changes before replacing it" >&2
+  exit 1
+fi
+
+git init -q "$review_source"
+git -C "$review_source" remote add origin https://gitlab.com/hubertgajewski-ai/deep-review.git
+git -C "$review_source" fetch --depth 1 origin "$deep_review_ref"
+git -C "$review_source" checkout --detach FETCH_HEAD
+test "$(git -C "$review_source" rev-parse HEAD)" = "$deep_review_ref"
 mkdir -p .agents/skills
-cp -R "$review_source/skills/deep-review" .agents/skills/deep-review
+cp -R "$review_source/skills/deep-review" "$review_destination"
 ```
 
 ### Windows PowerShell
@@ -34,10 +50,31 @@ cp -R "$review_source/skills/deep-review" .agents/skills/deep-review
 From the consuming repository root:
 
 ```powershell
+$deepReviewRef = "<reviewed-40-character-commit-sha>"
+$reviewDestination = ".agents\skills\deep-review"
 $reviewSource = Join-Path ([System.IO.Path]::GetTempPath()) ("deep-review-" + [guid]::NewGuid())
-git clone --depth 1 https://gitlab.com/hubertgajewski-ai/deep-review.git $reviewSource
+
+if ($deepReviewRef -cnotmatch '^[0-9a-f]{40}$') {
+    throw "deepReviewRef must be a lowercase, 40-character commit SHA"
+}
+if ($null -ne (Get-Item -LiteralPath $reviewDestination -Force -ErrorAction SilentlyContinue)) {
+    throw "$reviewDestination already exists; review changes before replacing it"
+}
+
+git init -q $reviewSource
+if ($LASTEXITCODE -ne 0) { throw "git init failed" }
+git -C $reviewSource remote add origin https://gitlab.com/hubertgajewski-ai/deep-review.git
+if ($LASTEXITCODE -ne 0) { throw "git remote add failed" }
+git -C $reviewSource fetch --depth 1 origin $deepReviewRef
+if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
+git -C $reviewSource checkout --detach FETCH_HEAD
+if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
+$resolvedCommit = (git -C $reviewSource rev-parse HEAD)
+if ($LASTEXITCODE -ne 0 -or $resolvedCommit -cne $deepReviewRef) {
+    throw "fetched commit does not match deepReviewRef"
+}
 New-Item -ItemType Directory -Force .agents\skills | Out-Null
-Copy-Item -Recurse (Join-Path $reviewSource "skills\deep-review") .agents\skills\deep-review
+Copy-Item -Recurse -LiteralPath (Join-Path $reviewSource "skills\deep-review") -Destination $reviewDestination
 ```
 
 These commands intentionally fail or require intervention if `deep-review` is already installed. Review upstream changes before replacing a trusted skill. Commit the copied package when it is intended to be shared by the project.
@@ -95,7 +132,7 @@ Clients are listed alphabetically. Locations and links were verified against fir
 | Cline | `.cline/skills` | `~/.cline/skills` | Skills are experimental and may need enabling in **Settings > Features**. Cline also recognizes selected compatibility paths. [Cline skills](https://docs.cline.bot/customization/skills) |
 | Codex CLI, IDE, and desktop | `.agents/skills` | `~/.agents/skills` | Codex scans repository skill directories from the working directory to the repository root and supports symlinked skill folders. [OpenAI skill guide](https://learn.chatgpt.com/docs/build-skills) |
 | Cursor | `.agents/skills` or `.cursor/skills` | `~/.agents/skills` or `~/.cursor/skills` | Available in Cursor editor and CLI; use a current release. [Cursor Agent Skills](https://cursor.com/docs/context/skills) |
-| Devin | `.agents/skills` (recommended); also `.devin/skills`, `.github/skills`, and supported compatibility paths | Not currently documented | Devin skills are repository-scoped; it currently documents no global skill directory. [Devin skills](https://docs.devin.ai/product-guides/skills) |
+| Devin | `.agents/skills` (recommended), `.github/skills`, or another supported compatibility path | Not currently documented | Devin skills are repository-scoped; it currently documents no global skill directory. [Devin skills](https://docs.devin.ai/product-guides/skills) |
 | Gemini CLI | `.agents/skills` or `.gemini/skills` | `~/.agents/skills` or `~/.gemini/skills` | `gemini skills install` and `gemini skills link` are also supported. [Gemini CLI skills](https://geminicli.com/docs/cli/using-agent-skills/) |
 | GitHub Copilot CLI, VS Code, and coding agent | `.github/skills`, `.agents/skills`, or `.claude/skills` | `~/.copilot/skills` or `~/.agents/skills` | Skills also work with Copilot code review, the Copilot app, and JetBrains agent mode. [GitHub Copilot skills](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) |
 | Google Antigravity | `.agents/skills` | `~/.gemini/config/skills` | `.agent/skills` remains a legacy workspace compatibility path. [Antigravity skills](https://antigravity.google/docs/skills?app=antigravity-ide) |
@@ -138,7 +175,7 @@ Organization sharing and provisioning depend on the Claude plan and administrato
 
 Deep Review has no automatic updater. For a vendored project installation:
 
-1. Fetch or clone the desired upstream tag or commit.
+1. Select an exact reviewed commit SHA, or verify a signed tag and record the exact commit it resolves to.
 2. Compare `skills/deep-review/` with the installed copy.
 3. Review changes to `SKILL.md`, `references/`, and executable scripts.
 4. Replace the installed package and commit the update as one reviewed change.

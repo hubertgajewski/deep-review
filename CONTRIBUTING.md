@@ -27,7 +27,7 @@ On Windows, use `py -3 -m unittest discover -s tests -v` when the Python launche
 
 When adding or changing an agent:
 
-1. Preserve the frontmatter and output contract described by `references/agent-contract.md`.
+1. Preserve the frontmatter and output contract described by the [agent contract](skills/deep-review/references/agent-contract.md).
 2. Give each concern one clear owner; do not create duplicate findings across reviewers.
 3. Keep built-in agents repository-neutral.
 4. Do not use the reserved `x-` namespace for built-in agent names, domains, or language-rule namespaces. It belongs to consumer extensions.
