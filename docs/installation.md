@@ -1,0 +1,129 @@
+# Installation
+
+Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep-review/`. Install that directory—not the repository root—under a skill-discovery directory supported by your AI client.
+
+## Choose a scope
+
+Project installation is recommended for shared, reproducible review behavior. Commit the installed `deep-review` directory with the repository so teammates and remote agents use the reviewed version. User installation is useful for personal use across many repositories but is not available in every client.
+
+After installation, the important path is:
+
+```text
+<skill-root>/deep-review/SKILL.md
+```
+
+Do not flatten the package or copy only `SKILL.md`; Deep Review also needs its `references/`, `scripts/`, and `agents/` directories.
+
+## Install a project copy
+
+The portable project location is `.agents/skills/`, supported by many—but not all—clients. Check the [client table](#ai-client-locations) and replace `.agents/skills` with the client-native project directory when necessary.
+
+### Linux and macOS
+
+From the consuming repository root:
+
+```bash
+review_source="$(mktemp -d)"
+git clone --depth 1 https://gitlab.com/hubertgajewski-ai/deep-review.git "$review_source"
+mkdir -p .agents/skills
+cp -R "$review_source/skills/deep-review" .agents/skills/deep-review
+```
+
+### Windows PowerShell
+
+From the consuming repository root:
+
+```powershell
+$reviewSource = Join-Path ([System.IO.Path]::GetTempPath()) ("deep-review-" + [guid]::NewGuid())
+git clone --depth 1 https://gitlab.com/hubertgajewski-ai/deep-review.git $reviewSource
+New-Item -ItemType Directory -Force .agents\skills | Out-Null
+Copy-Item -Recurse (Join-Path $reviewSource "skills\deep-review") .agents\skills\deep-review
+```
+
+These commands intentionally fail or require intervention if `deep-review` is already installed. Review upstream changes before replacing a trusted skill. Commit the copied package when it is intended to be shared by the project.
+
+## Install a user copy
+
+Use the same copy process with the user directory supported by your client. For example, clients using the shared `.agents` convention use:
+
+```text
+Linux/macOS:  $HOME/.agents/skills/deep-review/
+PowerShell:   $env:USERPROFILE\.agents\skills\deep-review\
+Command Prompt: %USERPROFILE%\.agents\skills\deep-review\
+```
+
+The `~` notation in the client table means the current user's home directory. It works in common POSIX shells and PowerShell, but not in Command Prompt. Project-relative paths such as `.agents/skills` identify the same repository location on Linux, macOS, and Windows; only the displayed separator differs.
+
+For WSL, `$HOME` is the Linux home directory inside the selected distribution, not the Windows `%USERPROFILE%` directory. Install the skill in the environment where the client process runs.
+
+## AI client locations
+
+Clients are listed alphabetically. Locations and links were verified against first-party documentation on 2026-07-20. Product support changes quickly, so consult the linked source if discovery fails.
+
+| AI client | Project location | User or global location | Notes and official source |
+| --- | --- | --- | --- |
+| Amp | `.agents/skills` | `~/.config/agents/skills` or `~/.agents/skills` | Amp also reads Claude-compatible locations. [Amp Owner's Manual](https://ampcode.com/manual#agent-skills) |
+| Claude Code CLI and Claude Desktop | `.claude/skills` | `~/.claude/skills` | Claude Code surfaces share this filesystem model. For regular Claude chat or Cowork, upload a ZIP as described below. [Claude Code skills](https://code.claude.com/docs/en/slash-commands), [Claude app skills](https://support.claude.com/en/articles/12512180-use-skills-in-claude) |
+| Cline | `.cline/skills` | `~/.cline/skills` | Skills are experimental and may need enabling in **Settings > Features**. Cline also recognizes selected compatibility paths. [Cline skills](https://docs.cline.bot/customization/skills) |
+| Codex CLI, IDE, and desktop | `.agents/skills` | `~/.agents/skills` | Codex scans repository skill directories from the working directory to the repository root and supports symlinked skill folders. [OpenAI skill guide](https://learn.chatgpt.com/docs/build-skills) |
+| Cursor | `.agents/skills` or `.cursor/skills` | `~/.agents/skills` or `~/.cursor/skills` | Available in Cursor editor and CLI; use a current release. [Cursor Agent Skills](https://cursor.com/docs/context/skills) |
+| Devin | `.agents/skills` (recommended); also `.devin/skills`, `.github/skills`, and supported compatibility paths | Not currently documented | Devin skills are repository-scoped; it currently documents no global skill directory. [Devin skills](https://docs.devin.ai/product-guides/skills) |
+| Gemini CLI | `.agents/skills` or `.gemini/skills` | `~/.agents/skills` or `~/.gemini/skills` | `gemini skills install` and `gemini skills link` are also supported. [Gemini CLI skills](https://geminicli.com/docs/cli/using-agent-skills/) |
+| GitHub Copilot CLI, VS Code, and coding agent | `.github/skills`, `.agents/skills`, or `.claude/skills` | `~/.copilot/skills` or `~/.agents/skills` | Skills also work with Copilot code review, the Copilot app, and JetBrains agent mode. [GitHub Copilot skills](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) |
+| Google Antigravity | `.agents/skills` | `~/.gemini/config/skills` | `.agent/skills` remains a legacy workspace compatibility path. [Antigravity skills](https://antigravity.google/docs/skills?app=antigravity-ide) |
+| Goose | `.agents/skills` | `~/.agents/skills` | `.goose/skills` and Claude-compatible directories are retained for backward compatibility. [Goose Agent Skills](https://goose-docs.ai/docs/guides/context-engineering/using-skills/) |
+| Grok Build CLI | `.grok/skills` | `~/.grok/skills` | Additional directories can be configured under `[skills] paths` in `~/.grok/config.toml`. [Grok skills](https://docs.x.ai/build/features/skills-plugins-marketplaces) |
+| JetBrains Junie | `.junie/skills` | `~/.junie/skills` | On Windows the documented global path is `%USERPROFILE%\.junie\skills`. Skills work in Junie CLI and JetBrains IDEs. [Junie Agent skills](https://junie.jetbrains.com/docs/agent-skills.html) |
+| Kiro | `.kiro/skills` | `~/.kiro/skills` | Applies to Kiro IDE and CLI; custom CLI agents must list skill resources explicitly. [Kiro IDE skills](https://kiro.dev/docs/skills/), [Kiro CLI skills](https://kiro.dev/docs/cli/skills/) |
+| Mistral Vibe Code | `.agents/skills` or `.vibe/skills` | `~/.vibe/skills` | Custom directories can be set with `skill_paths` in Vibe's `config.toml`. [Vibe Code skills](https://docs.mistral.ai/vibe/code/cli/skills) |
+| OpenCode | `.agents/skills`, `.opencode/skills`, or `.claude/skills` | `~/.agents/skills`, `~/.config/opencode/skills`, or `~/.claude/skills` | OpenCode recommends WSL for the best Windows experience; install under the WSL home when OpenCode runs there. [OpenCode skills](https://opencode.ai/docs/skills), [Windows/WSL guidance](https://opencode.ai/docs/windows-wsl/) |
+| OpenHands | `.agents/skills` | `~/.openhands/skills` | `/add-skill` installs into the current workspace; global installation is manual. [Adding OpenHands skills](https://docs.openhands.dev/overview/skills/adding) |
+| Qwen Code | `.qwen/skills` | `~/.qwen/skills` | Recent Qwen Code versions expose skills through `/skills` and `/<skill-name>`. [Qwen Code skills](https://qwenlm.github.io/qwen-code-docs/en/users/features/skills/) |
+| T3 Code | Use the selected provider's project location | Use the selected provider's user location | T3 Code launches supported provider harnesses rather than defining a separate skill store. Follow the Claude Code, Codex, Cursor, Grok, or OpenCode row that matches the active provider. [T3 Code](https://t3.codes/), [T3 Code repository](https://github.com/pingdotgg/t3code) |
+| Warp | `.agents/skills` (recommended), `.warp/skills`, or another supported compatibility path | `~/.agents/skills` (recommended), `~/.warp/skills`, or another supported compatibility path | Warp scans a broad set of client-compatible directories. [Warp skills](https://docs.warp.dev/agent-platform/capabilities/skills) |
+| Windsurf Cascade | `.agents/skills` or `.windsurf/skills` | `~/.agents/skills` or `~/.codeium/windsurf/skills` | Claude-compatible locations are optional when Claude configuration import is enabled. Enterprise system paths are OS-specific. [Windsurf skills](https://docs.windsurf.com/windsurf/cascade/skills) |
+
+### Enterprise and system locations
+
+Do not derive enterprise paths by replacing `$HOME` with a system directory. They are product- and OS-specific. For example, Codex documents `/etc/codex/skills` for administrator-installed skills, while Windsurf uses `/Library/Application Support/Windsurf/skills/` on macOS, `/etc/windsurf/skills/` on Linux/WSL, and `C:\ProgramData\Windsurf\skills\` on Windows. Follow the client's administrative documentation and deployment policy.
+
+## Claude chat and Cowork ZIP upload
+
+Claude chat and Cowork do not discover a local project folder in the same way as Claude Code. Package the `deep-review` directory as a ZIP so the archive contains `deep-review/SKILL.md`, then open **Customize > Skills**, choose **Create skill > Upload a skill**, upload the ZIP, and enable it.
+
+Linux/macOS, from this repository:
+
+```bash
+cd skills
+zip -r deep-review.zip deep-review
+```
+
+Windows PowerShell, from this repository:
+
+```powershell
+Compress-Archive -Path .\skills\deep-review -DestinationPath .\deep-review.zip
+```
+
+Organization sharing and provisioning depend on the Claude plan and administrator settings. Uploaded personal skills are private unless explicitly shared through a supported organization workflow.
+
+## Updating
+
+Deep Review has no automatic updater. For a vendored project installation:
+
+1. Fetch or clone the desired upstream tag or commit.
+2. Compare `skills/deep-review/` with the installed copy.
+3. Review changes to `SKILL.md`, `references/`, and executable scripts.
+4. Replace the installed package and commit the update as one reviewed change.
+5. Re-run the client's discovery check and a small review invocation.
+
+Pinning an exact commit in repository documentation or dependency tooling makes installations reproducible. Avoid automatically pulling an unreviewed default branch into trusted skill directories.
+
+## Verify installation
+
+Start a new client session or use its reload command, then:
+
+1. List available skills and confirm `deep-review` appears.
+2. Ask the client to use Deep Review on a repository with a small known diff.
+3. Confirm the output includes the reviewer roster and ends in a documented aggregate terminal state.
+
+Examples of discovery commands include `/skills` in Claude Code, Gemini CLI, Qwen Code, and Warp; `goose skills list` in Goose; and the client settings UI where documented. If discovery fails, check that the final path is exactly `<skill-root>/deep-review/SKILL.md`, validate the YAML frontmatter, and consult the linked first-party client guide.
