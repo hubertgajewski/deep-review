@@ -43,11 +43,10 @@ PRIVATE_KEY_RE = re.compile(
     r".*?-----END (?P=label)-----",
     re.DOTALL,
 )
-AUTHORIZATION_RE = re.compile(
-    r"\b(authorization\s*[:=]\s*)[^\r\n]*",
+SENSITIVE_HEADER_RE = re.compile(
+    r"\b((?:authorization|(?:set-)?cookie)\s*[:=]\s*)[^\r\n]*",
     re.IGNORECASE,
 )
-COOKIE_HEADER_RE = re.compile(r"\b((?:set-)?cookie\s*:\s*)[^\r\n]*", re.IGNORECASE)
 NAMED_CREDENTIAL_RE = re.compile(
     r"\b(?P<name>api[_ -]?key|access[_ -]?key|private[_ -]?key|"
     r"access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|"
@@ -536,11 +535,7 @@ def credential_value_is_placeholder(value: str) -> bool:
 
 def redact_sensitive_text(text: str) -> str:
     redacted = PRIVATE_KEY_RE.sub(REDACTION_MARKER, text)
-    redacted = AUTHORIZATION_RE.sub(
-        lambda match: f"{match.group(1)}{REDACTION_MARKER}",
-        redacted,
-    )
-    redacted = COOKIE_HEADER_RE.sub(
+    redacted = SENSITIVE_HEADER_RE.sub(
         lambda match: f"{match.group(1)}{REDACTION_MARKER}", redacted
     )
     for pattern in WELL_KNOWN_CREDENTIAL_RES:
@@ -566,6 +561,11 @@ def redact_sensitive_text(text: str) -> str:
     return NAMED_CREDENTIAL_RE.sub(replace_named, redacted)
 
 
+def reject_sensitive_structural_field(value: str, label: str) -> None:
+    if redact_sensitive_text(value) != value:
+        raise CacheError(f"{label} contains a recognized credential")
+
+
 def map_result_lines(text: str, transform: Callable[[str], str]) -> str:
     transformed: list[str] = []
     for raw_line in text.splitlines(keepends=True):
@@ -583,6 +583,10 @@ def redact_result_body(text: str, schema: str) -> str:
             fields = line.split(" | ")
             if len(fields) != 5:
                 return redact_sensitive_text(line)
+            reject_sensitive_structural_field(fields[1], "H/M/L category")
+            location = re.fullmatch(r"(.+):([1-9]\d*)", fields[2])
+            location_path = location.group(1) if location else fields[2]
+            reject_sensitive_structural_field(location_path, "H/M/L location")
             fields[3] = redact_sensitive_text(fields[3])
             fields[4] = redact_sensitive_text(fields[4])
             return " | ".join(fields)
@@ -592,10 +596,14 @@ def redact_result_body(text: str, schema: str) -> str:
         def redact_checklist_line(line: str) -> str:
             item = CHECK_ITEM_RE.fullmatch(line)
             if item:
+                reject_sensitive_structural_field(item.group(2), "checklist item name")
                 evidence = redact_sensitive_text(item.group(3))
                 return f"- [{item.group(1)}] {item.group(2)}: {evidence}"
             action = CHECK_FAILURE_RE.fullmatch(line)
             if action:
+                reject_sensitive_structural_field(
+                    action.group(2), "checklist failure location"
+                )
                 return (
                     f"{action.group(1)}. {action.group(2)}:{action.group(3)} "
                     f"{redact_sensitive_text(action.group(4))}"

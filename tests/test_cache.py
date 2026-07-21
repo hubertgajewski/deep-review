@@ -468,6 +468,51 @@ class ResultValidationTests(unittest.TestCase):
         self.assertNotIn("malformed password", failed.stderr)
         self.assertNotIn("Traceback", failed.stderr)
 
+    def test_process_result_rejects_credentials_in_structural_fields(self) -> None:
+        provider_token = "glpat-" + "S" * 20
+        cases = (
+            (
+                "hml",
+                f"HIGH | token={provider_token} | src/auth.py:9 | evidence | fix\n"
+                "summary: 1 high / 0 medium / 0 low\n",
+                "H/M/L category",
+            ),
+            (
+                "hml",
+                f"HIGH | credential-exposure | src/token={provider_token}:9 | evidence | fix\n"
+                "summary: 1 high / 0 medium / 0 low\n",
+                "H/M/L location",
+            ),
+            (
+                "checklist",
+                f"- [pass] token={provider_token}: evidence\n"
+                "summary: 1 pass / 0 fail / 0 N/A\n"
+                "Failures: none.\n",
+                "checklist item name",
+            ),
+        )
+
+        for schema, raw, expected_error in cases:
+            with self.subTest(schema=schema, expected_error=expected_error):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(CACHE_PATH),
+                        "process-result",
+                        "--schema",
+                        schema,
+                    ],
+                    input=raw,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual(completed.stdout, "")
+                self.assertIn(expected_error, completed.stderr)
+                self.assertNotIn(provider_token, completed.stderr)
+                self.assertNotIn("Traceback", completed.stderr)
+
     def test_process_result_rejects_invalid_or_oversized_stdin_without_traceback(self) -> None:
         for payload, expected in (
             (b"\xff\xfe", b"cannot read UTF-8 result from standard input"),
