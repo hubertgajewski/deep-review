@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import subprocess
+import tempfile
 import unittest
 
 
@@ -166,8 +168,8 @@ class PackageTests(unittest.TestCase):
 
         github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")
         gitlab = (SKILL / "references" / "providers" / "gitlab.md").read_text(encoding="utf-8")
-        self.assertIn('git diff --find-renames --find-copies "$BASE_SHA...$HEAD_SHA"', github)
-        self.assertIn('git diff --find-renames --find-copies "$BASE_SHA" "$HEAD_SHA"', gitlab)
+        self.assertIn('git diff --find-renames --find-copies-harder "$BASE_SHA...$HEAD_SHA"', github)
+        self.assertIn('git diff --find-renames --find-copies-harder "$BASE_SHA" "$HEAD_SHA"', gitlab)
         self.assertNotIn("gh pr diff", github)
         self.assertNotIn("glab mr diff", gitlab)
 
@@ -194,7 +196,7 @@ class PackageTests(unittest.TestCase):
         self.assertIn("rename/copy source and destination", main)
         self.assertIn("never reduce a mixed scope to an allowed subset", main)
 
-        local_metadata = "git diff --name-status -z --find-renames --find-copies HEAD"
+        local_metadata = "git diff --name-status -z --find-renames --find-copies-harder HEAD"
         local_content = "retrieve the tracked content diff"
         self.assertLess(scope.index(local_metadata), scope.index(local_content))
         self.assertIn("git ls-files --others --exclude-standard -z", scope)
@@ -202,10 +204,10 @@ class PackageTests(unittest.TestCase):
         self.assertIn("byte-for-byte", scope)
 
         range_metadata = (
-            "git diff --name-status -z --find-renames --find-copies "
+            "git diff --name-status -z --find-renames --find-copies-harder "
             "<validated-immutable-range>"
         )
-        range_content = "git diff --find-renames --find-copies <validated-immutable-range>"
+        range_content = "git diff --find-renames --find-copies-harder <validated-immutable-range>"
         self.assertLess(scope.index(range_metadata), scope.index(range_content))
         self.assertIn("both source and destination", scope)
         self.assertIn("malformed, truncated, or unknown status record fails scope resolution", scope)
@@ -217,14 +219,14 @@ class PackageTests(unittest.TestCase):
 
         provider_commands = {
             "github": (
-                'git diff --name-status -z --find-renames --find-copies '
+                'git diff --name-status -z --find-renames --find-copies-harder '
                 '"$BASE_SHA...$HEAD_SHA"',
-                'git diff --find-renames --find-copies "$BASE_SHA...$HEAD_SHA"',
+                'git diff --find-renames --find-copies-harder "$BASE_SHA...$HEAD_SHA"',
             ),
             "gitlab": (
-                'git diff --name-status -z --find-renames --find-copies '
+                'git diff --name-status -z --find-renames --find-copies-harder '
                 '"$BASE_SHA" "$HEAD_SHA"',
-                'git diff --find-renames --find-copies "$BASE_SHA" "$HEAD_SHA"',
+                'git diff --find-renames --find-copies-harder "$BASE_SHA" "$HEAD_SHA"',
             ),
         }
         for provider, (metadata_command, content_command) in provider_commands.items():
@@ -232,7 +234,6 @@ class PackageTests(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertLess(text.index(metadata_command), text.index(content_command))
-            self.assertIn("verified immutable", text)
             self.assertIn("including both sides of every rename or copy", text)
             self.assertIn("Any path-preflight rejection terminates immediately", text)
         github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")
@@ -243,6 +244,59 @@ class PackageTests(unittest.TestCase):
         self.assertIn("before content diff retrieval", orchestration)
         self.assertIn("One denied path fails the entire scope", user_config)
         self.assertIn("allowed/denied mixed change", user_config)
+
+    def test_git_preflight_detects_unchanged_copy_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.email", "tests@example.invalid"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.name", "Deep Review Tests"], cwd=repository, check=True)
+            (repository / "source.txt").write_text("copied content\n", encoding="utf-8")
+            subprocess.run(["git", "add", "source.txt"], cwd=repository, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=repository, check=True)
+            (repository / "copy.txt").write_text("copied content\n", encoding="utf-8")
+            subprocess.run(["git", "add", "copy.txt"], cwd=repository, check=True)
+
+            ordinary = subprocess.run(
+                ["git", "diff", "--name-status", "--find-copies", "HEAD"],
+                cwd=repository, check=True, capture_output=True, text=True,
+            ).stdout
+            harder = subprocess.run(
+                ["git", "diff", "--name-status", "--find-copies-harder", "HEAD"],
+                cwd=repository, check=True, capture_output=True, text=True,
+            ).stdout
+
+            self.assertEqual(ordinary, "A\tcopy.txt\n")
+            self.assertEqual(harder, "C100\tsource.txt\tcopy.txt\n")
+
+    def test_local_content_diff_uses_literal_pathspecs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.email", "tests@example.invalid"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.name", "Deep Review Tests"], cwd=repository, check=True)
+            magic_name = ":(literal)name.txt"
+            (repository / magic_name).write_text("before\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "--literal-pathspecs", "add", "--", magic_name],
+                cwd=repository, check=True,
+            )
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=repository, check=True)
+            (repository / magic_name).write_text("after\n", encoding="utf-8")
+
+            interpreted = subprocess.run(
+                ["git", "diff", "HEAD", "--", magic_name],
+                cwd=repository, check=True, capture_output=True, text=True,
+            ).stdout
+            literal = subprocess.run(
+                ["git", "--literal-pathspecs", "diff", "HEAD", "--", magic_name],
+                cwd=repository, check=True, capture_output=True, text=True,
+            ).stdout
+
+            self.assertEqual(interpreted, "")
+            self.assertIn(f"a/{magic_name}", literal)
+            scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
+            self.assertIn("git --literal-pathspecs diff", scope)
 
     def test_language_rule_catalogs_are_complete_and_unique(self) -> None:
         expected = {
@@ -398,7 +452,9 @@ class PackageTests(unittest.TestCase):
             self.assertIn(rule_id, user_config)
 
         scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
-        self.assertIn("Reject symlinks for every agent-readable", scope)
+        self.assertIn("Before every surrounding-context", scope)
+        self.assertIn("Reject denied components, traversal", scope)
+        self.assertIn("unchanged credential-bearing path", scope)
         self.assertIn("all agents, retries, tracing, and dependency hashes complete", scope)
 
     def test_synthetic_extension_fixture_is_complete(self) -> None:

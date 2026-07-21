@@ -7,6 +7,8 @@
 - Remote mode
 - Path mode
 - Ref and range mode
+- Path preflight
+- Immutable review context
 - Freeform focus
 - Normalized scope and sanitization
 
@@ -34,13 +36,13 @@ Reject `!`, `!abc`, `!-1`, compound references such as `group/project!123`, inva
 Require `HEAD`. First enumerate tracked changes and untracked paths without emitting their contents:
 
 ```bash
-git diff --name-status -z --find-renames --find-copies HEAD
+git diff --name-status -z --find-renames --find-copies-harder HEAD
 git ls-files --others --exclude-standard -z
 ```
 
 Parse the NUL-delimited status stream without shell interpolation. A rename or copy record contributes both its source and destination to the path preflight. Run the complete path preflight below, including no-follow metadata checks for every untracked path, before asking Git for hunks or opening an untracked file.
 
-After preflight succeeds, retrieve the tracked content diff with `git diff --find-renames --find-copies HEAD -- <accepted-pathspecs>`, passing every accepted tracked path as a separate quoted argument. Read accepted untracked files only through the no-follow rules in Immutable review context. Immediately repeat both metadata-only enumeration commands. If either status stream differs byte-for-byte, discard all captured content without prompt construction, snapshotting, or dependency hashing and restart the complete local preflight once. A second change fails scope resolution as a concurrently changing working tree. A newly appearing denied path therefore fails the scope without its content being read; a newly appearing allowed path triggers the same retry rather than being silently omitted.
+After preflight succeeds, retrieve the tracked content diff with `git --literal-pathspecs diff --find-renames --find-copies-harder HEAD -- <accepted-pathspecs>`, passing every accepted tracked path as a separate quoted argument. Literal pathspec mode is mandatory even after `--`; repository filenames beginning with pathspec magic or containing wildcard characters remain data, not selection syntax. Read accepted untracked files only through the no-follow rules in Immutable review context. Immediately repeat both metadata-only enumeration commands. If either status stream differs byte-for-byte, discard all captured content without prompt construction, snapshotting, or dependency hashing and restart the complete local preflight once. A second change fails scope resolution as a concurrently changing working tree. A newly appearing denied path therefore fails the scope without its content being read; a newly appearing allowed path triggers the same retry rather than being silently omitted.
 
 If both accepted metadata streams are empty, return `aggregate: no changes` without retrieving content.
 
@@ -82,7 +84,7 @@ Use explicit `--path` to disambiguate a path from a Git ref.
 
 Validate every revision with `git rev-parse --verify --quiet <value>^{commit}` and retain the resulting full object ID rather than later dereferencing a movable name. For a single base, resolve both `<base>` and `HEAD`, then review their immutable three-dot range. For an explicit range, preserve the caller's `..` or `...` semantics after resolving both sides to full commit IDs. Resolve a three-dot range's merge base to a full commit ID before path preflight and use that immutable tree as the effective source side for mode, symlink, and containment validation.
 
-First run `git diff --name-status -z --find-renames --find-copies <validated-immutable-range>` and perform the complete path preflight. Only after every emitted path is accepted may `git diff --find-renames --find-copies <validated-immutable-range>` retrieve content hunks. Pass the validated range as one quoted argument. Never use `git diff --quiet` as revision validation because exit code 1 normally means differences exist.
+First run `git diff --name-status -z --find-renames --find-copies-harder <validated-immutable-range>` and perform the complete path preflight. Only after every emitted path is accepted may `git diff --find-renames --find-copies-harder <validated-immutable-range>` retrieve content hunks. Harder copy detection is required so an unchanged source is still present in a copy record and both endpoints are validated. Pass the validated range as one quoted argument. Never use `git diff --quiet` as revision validation because exit code 1 normally means differences exist.
 
 ## Path preflight
 
@@ -94,13 +96,13 @@ Normalize each candidate to a repository-relative `/`-separated path without a l
 
 Treat the manifest as one atomic scope. If any candidate fails, emit `Failed at scope resolution: <reason>.` before any candidate content reaches tool output or model context. Do not retrieve the allowed members of a mixed allowed/denied scope, do not construct a partial snapshot, and do not hash any dependency.
 
-After acceptance, freeze the manifest as the only content-read allowlist. Content retrieval must use the same immutable identities and rename/copy settings as enumeration. Cross-check its file headers and status metadata against the accepted manifest; any mismatch fails scope resolution and never expands the allowlist.
+After acceptance, freeze the manifest as the only diff-content read allowlist. Content retrieval must use the same immutable identities and rename/copy settings as enumeration. Cross-check its file headers and status metadata against the accepted manifest; any mismatch fails scope resolution and never expands the allowlist.
 
 ## Immutable review context
 
 Only after the complete path preflight and content retrieval succeed, materialize one stable snapshot root for the normalized reviewed state. Local mode snapshots committed `HEAD` plus the captured staged, unstaged, and safe untracked content. Path mode snapshots the enumerated synthetic-hunk inputs and committed-`HEAD` surrounding context. Ref/range and remote modes materialize the exact reviewed `head_identity` in a temporary detached worktree and verify its `HEAD`; fetch only the provider-owned immutable change ref when the object is absent. If the exact state cannot be materialized, mark scope resolution incomplete rather than inspecting a mutable or unrelated checkout.
 
-Reject symlinks for every agent-readable or dependency-hashed path. Open without following links where supported and verify every canonical target remains beneath the snapshot root before reading. Agents may read surrounding files only beneath this root. Hash dependency content from the same snapshot and keep it alive until all agents, retries, tracing, and dependency hashes complete; then remove it in orchestrator-owned cleanup.
+Before every surrounding-context, trusted extension-reference, or dependency-content read, normalize and validate the requested repository-relative path again. Reject denied components, traversal, paths outside the snapshot root, and symlinks; open without following links where supported and verify the canonical target remains beneath the snapshot root before reading. These read-time checks apply to unchanged paths that were absent from the changed-file manifest, so a changed file cannot cause an unchanged credential-bearing path to enter model context or dependency hashing. Use literal path handling for Git commands that accept a validated repository path. Hash dependency content from the same snapshot and keep it alive until all agents, retries, tracing, and dependency hashes complete; then remove it in orchestrator-owned cleanup.
 
 ## Freeform focus
 
