@@ -1,7 +1,7 @@
 ---
-name: cobol
+name: x-example-cobol
 description: Review COBOL data-layout and arithmetic correctness.
-domain: cobol-data-layout
+domain: x-example-cobol-data-layout
 applies_to:
   - "**/*.cbl"
   - "**/*.cob"

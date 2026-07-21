@@ -203,7 +203,7 @@ class PackageTests(unittest.TestCase):
             "groovy": ("**/*.groovy", "**/*.gradle", "Jenkinsfile"),
             "kotlin": ("**/*.kt", "**/*.kts"),
         }
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
         orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
         seen: set[str] = set()
         for language, rule_ids in expected.items():
@@ -224,7 +224,7 @@ class PackageTests(unittest.TestCase):
                 self.assertRegex(text, rf"(?m)^rule_id: {re.escape(rule_id)}$")
                 self.assertIn("Public reference", text)
                 self.assertIn("Recommend", text)
-                self.assertIn(rule_id, readme)
+                self.assertIn(rule_id, user_config)
 
         fragments = list((SKILL / "references" / "language-rules").glob("*/*.md"))
         self.assertEqual(len(fragments), len(seen))
@@ -267,7 +267,7 @@ class PackageTests(unittest.TestCase):
         orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
         output = (SKILL / "references" / "output-schemas.md").read_text(encoding="utf-8")
         main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
 
         for token in (
             "[language_agents]", "[language_rules]", "disabled = []", "unknown agent names",
@@ -290,7 +290,7 @@ class PackageTests(unittest.TestCase):
             "java.null-unboxing", "javascript.unsafe-optional-chaining",
             "groovy.elvis-falsy-default", "kotlin.unsafe-not-null-assertion"
         ):
-            self.assertIn(rule_id, readme)
+            self.assertIn(rule_id, user_config)
 
         scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
         self.assertIn("Reject symlinks for every agent-readable", scope)
@@ -300,19 +300,94 @@ class PackageTests(unittest.TestCase):
         fixture = ROOT / "tests" / "fixtures" / "consumer" / ".deep-review"
         self.assertTrue((fixture / "config.toml").is_file())
         self.assertTrue((fixture / "checklist.md").is_file())
-        agent = (fixture / "agents" / "cobol.md").read_text(encoding="utf-8")
+        agent = (fixture / "agents" / "x-example-cobol.md").read_text(encoding="utf-8")
         for field in (
             "name:", "domain:", "applies_to:", "prompt_scope:", "output_schema:", "blocking:", "references:"
         ):
             self.assertIn(field, agent)
-        self.assertIn('name: cobol', agent)
+        self.assertIn('name: x-example-cobol', agent)
+        self.assertIn('domain: x-example-cobol-data-layout', agent)
         self.assertIn('docs/cobol-guidelines.md', agent)
         self.assertTrue((fixture.parent / "docs" / "cobol-guidelines.md").is_file())
         self.assertTrue((fixture.parent / "src" / "batch" / "CustomerReport.cbl").is_file())
 
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
-        self.assertIn("name: cobol", config)
+        self.assertIn("name: x-example-cobol", config)
+        self.assertIn("domain: x-example-cobol-data-layout", config)
+        self.assertIn("`x-` prefix is reserved for consumer extensions", config)
         self.assertNotRegex(config, r"(?m)^name: java$")
+
+    def test_user_and_governance_documentation_is_present(self) -> None:
+        for relative in (
+            "README.md", "LICENSE", "CONTRIBUTING.md", "SECURITY.md", "AGENTS.md", "CLAUDE.md",
+            "docs/installation.md", "docs/configuration.md", "docs/maintainers.md",
+        ):
+            self.assertTrue((ROOT / relative).is_file(), relative)
+
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        maintainers = (ROOT / "docs" / "maintainers.md").read_text(encoding="utf-8")
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        claude = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+        license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+        installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+        self.assertIn("review-only Agent Skill", readme)
+        self.assertIn("does not edit consumer source files", readme)
+        self.assertNotIn("Disabling automatic pipelines", readme)
+        for invocation in (
+            "/deep-review --base main", "$deep-review --base main",
+            "@skills:deep-review --base main", "@deep-review --base main",
+        ):
+            self.assertIn(invocation, readme)
+            self.assertIn(invocation, installation)
+        self.assertIn("Disable automatic pipelines", maintainers)
+        self.assertIn("user-facing installation", agents)
+        self.assertIn("@AGENTS.md", claude)
+        self.assertIn("MIT License", license_text)
+        self.assertIn("Copyright (c) 2026 Hubert Gajewski", license_text)
+        self.assertIn("Turn on confidentiality", security)
+        self.assertNotIn("This issue is confidential", security)
+
+    def test_installation_clients_are_alphabetical_and_complete(self) -> None:
+        installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        table = installation.split("## AI client locations", 1)[1].split(
+            "### Enterprise and system locations", 1
+        )[0]
+        clients = [
+            line.split("|", 2)[1].strip()
+            for line in table.splitlines()
+            if line.startswith("| ") and not line.startswith("| AI client") and not line.startswith("| ---")
+        ]
+        self.assertEqual(clients, sorted(clients, key=str.casefold))
+        self.assertEqual(len(clients), 20)
+        for expected in (
+            "Amp", "Claude Code CLI and Claude Desktop", "Cline", "Codex CLI, IDE, and desktop",
+            "Cursor", "Devin", "Gemini CLI", "GitHub Copilot CLI, VS Code, and coding agent",
+            "Google Antigravity", "Goose", "Grok Build CLI", "JetBrains Junie", "Kiro",
+            "Mistral Vibe Code", "OpenCode", "OpenHands", "Qwen Code", "T3 Code", "Warp",
+            "Windsurf Cascade",
+        ):
+            self.assertIn(expected, clients)
+
+    def test_consumer_namespace_is_not_used_by_built_ins(self) -> None:
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        contract = (SKILL / "references" / "agent-contract.md").read_text(encoding="utf-8")
+        self.assertIn("Package-owned built-ins must never use it", contract)
+        self.assertIn("`x-<owner>-<purpose>`", config)
+        for path in (SKILL / "references" / "agents").glob("*.md"):
+            name = re.search(r"(?m)^name: ([a-z0-9-]+)$", path.read_text(encoding="utf-8"))
+            self.assertIsNotNone(name, path.name)
+            assert name
+            self.assertFalse(name.group(1).startswith("x-"), path.name)
+
+    def test_extension_names_are_unique_independently_of_domains(self) -> None:
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        contract = (SKILL / "references" / "agent-contract.md").read_text(encoding="utf-8")
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+
+        self.assertIn("two files cannot share a `name` even when their domains differ", config)
+        self.assertIn("name duplicates another extension name, even when their domains differ", contract)
+        self.assertIn("Duplicate extension names or domains", user_config)
 
     def test_javascript_promise_rule_precedence_is_explicit(self) -> None:
         rules = SKILL / "references" / "language-rules" / "javascript"

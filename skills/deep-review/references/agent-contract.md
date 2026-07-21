@@ -34,6 +34,8 @@ Disabling a language rule suppresses that construct-based review across the rost
 Do not duplicate a sibling finding unless the impact is independently within the current domain.
 Built-in ownership takes precedence over extension domain labels; an extension must defer any overlapping built-in finding.
 
+The `x-` prefix is reserved for consumer extension names, domains, and language-rule namespaces. Package-owned built-ins must never use it. This reservation protects explicitly namespaced consumer reviewers from future built-in identity collisions; it does not let an extension override built-in ownership.
+
 ## Language rule contract
 
 Each built-in language agent declares an ordered list of rule IDs and matching path patterns. Each corresponding package rule fragment must:
@@ -60,7 +62,9 @@ Reject an extension when:
 - frontmatter is malformed;
 - its name, domain, trigger paths, prompt scope, schema, blocking policy, instructions, or references are missing;
 - a declared reference is absolute, traverses outside the repository, or is unavailable at the trusted revision;
-- its domain duplicates another extension domain or equals a built-in agent name or language-rule namespace;
+- its name duplicates another extension name, even when their domains differ;
+- its domain duplicates another extension domain;
+- its name or domain equals a built-in agent name or language-rule namespace;
 - `prompt_scope` or `output_schema` is unknown;
 - blocking levels do not belong to its schema;
 - it requests source editing or project-command execution;
