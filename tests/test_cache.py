@@ -193,6 +193,22 @@ class ResultValidationTests(unittest.TestCase):
                         argparse.Namespace(**base, allowed_category=categories)
                     )
 
+    def test_result_body_and_validation_input_have_hard_byte_limits(self) -> None:
+        oversized = "x" * (CACHE.RESULT_MAX_UTF8_BYTES + 1)
+        with self.assertRaisesRegex(CACHE.CacheError, "result body exceeds"):
+            CACHE.validate_result_object(
+                {"body": oversized, "summary": {"high": 0, "medium": 0, "low": 0}},
+                "hml",
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = Path(directory) / "result.txt"
+            result.write_text(oversized, encoding="utf-8")
+            with self.assertRaisesRegex(CACHE.CacheError, "result exceeds"):
+                CACHE.command_validate_result(
+                    argparse.Namespace(schema="hml", file=str(result), allowed_category=[])
+                )
+
     def test_checklist_empty_and_failure(self) -> None:
         passing = "- [pass] tests: focused test exists\nsummary: 1 pass / 0 fail / 0 N/A\nFailures: none.\n"
         self.assertEqual(CACHE.validate_checklist(passing), {"pass": 1, "fail": 0, "N/A": 0})
@@ -247,6 +263,23 @@ class CacheStorageTests(unittest.TestCase):
         self.assertEqual(len(list((self.cache_dir / "agents").glob("code.json"))), 1)
         mode = stat.S_IMODE(path.stat().st_mode)
         self.assertEqual(mode & 0o077, 0)
+
+    def test_cache_reads_and_writes_reject_oversized_records(self) -> None:
+        read_path = self.cache_dir / "oversized-read.json"
+        read_path.write_text(
+            json.dumps({"value": "x" * CACHE.CACHE_RECORD_MAX_UTF8_BYTES}),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(CACHE.CacheError, "JSON input exceeds"):
+            CACHE.read_json(read_path)
+
+        write_path = self.cache_dir / "oversized-write.json"
+        with self.assertRaisesRegex(CACHE.CacheError, "cache record exceeds"):
+            CACHE.atomic_write(
+                write_path,
+                {"value": "x" * CACHE.CACHE_RECORD_MAX_UTF8_BYTES},
+            )
+        self.assertFalse(write_path.exists())
 
     def test_store_and_lookup_survive_separate_calls_and_replace_latest(self) -> None:
         result_path = self.root / "result.json"

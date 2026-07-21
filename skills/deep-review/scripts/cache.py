@@ -36,6 +36,8 @@ CHECK_SUMMARY_RE = re.compile(r"^summary: (\d+) pass / (\d+) fail / (\d+) N/A$")
 CHECK_ITEM_RE = re.compile(r"^- \[(pass|fail|N/A)\] ([^:]+): (.+)$")
 CHECK_FAILURE_RE = re.compile(r"^([1-9]\d*)\. (.+):([1-9]\d*) (.+)$")
 MAX_SCOPE_STATES = 64
+RESULT_MAX_UTF8_BYTES = 262_144
+CACHE_RECORD_MAX_UTF8_BYTES = 524_288
 _MISSING_JSON = object()
 KEY_FIELDS = {
     "schema_version",
@@ -69,15 +71,43 @@ def fail(message: str, code: int = 2) -> None:
     raise SystemExit(code)
 
 
+def read_bounded_text(
+    path: Path,
+    max_utf8_bytes: int,
+    label: str,
+) -> str:
+    try:
+        with path.open("rb") as handle:
+            data = handle.read(max_utf8_bytes + 1)
+    except FileNotFoundError as exc:
+        raise CacheError(f"cannot read {label} from {path}: {exc}") from exc
+    except OSError as exc:
+        raise CacheError(f"cannot read {label} from {path}: {exc}") from exc
+    if len(data) > max_utf8_bytes:
+        raise CacheError(f"{label} exceeds the {max_utf8_bytes}-byte limit: {path}")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise CacheError(f"cannot read UTF-8 {label} from {path}: {exc}") from exc
+
+
 def read_json(path: Path, *, missing_ok: bool = False) -> Any:
     try:
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        with path.open("rb") as handle:
+            data = handle.read(CACHE_RECORD_MAX_UTF8_BYTES + 1)
     except FileNotFoundError as exc:
         if missing_ok:
             return _MISSING_JSON
         raise CacheError(f"cannot read valid JSON from {path}: {exc}") from exc
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except OSError as exc:
+        raise CacheError(f"cannot read valid JSON from {path}: {exc}") from exc
+    if len(data) > CACHE_RECORD_MAX_UTF8_BYTES:
+        raise CacheError(
+            f"JSON input exceeds the {CACHE_RECORD_MAX_UTF8_BYTES}-byte limit: {path}"
+        )
+    try:
+        return json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise CacheError(f"cannot read valid JSON from {path}: {exc}") from exc
 
 
@@ -160,6 +190,11 @@ def safe_cache_dir(repo_root_arg: str, cache_dir_arg: str, create: bool = False)
 def atomic_write(path: Path, value: Any) -> None:
     if path.parent.is_symlink():
         raise CacheError(f"atomic write parent cannot be a symlink: {path.parent}")
+    rendered = json.dumps(value, sort_keys=True, ensure_ascii=False, indent=2) + "\n"
+    if len(rendered.encode("utf-8")) > CACHE_RECORD_MAX_UTF8_BYTES:
+        raise CacheError(
+            f"cache record exceeds the {CACHE_RECORD_MAX_UTF8_BYTES}-byte limit: {path}"
+        )
     try:
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         descriptor, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
@@ -171,8 +206,7 @@ def atomic_write(path: Path, value: Any) -> None:
         handle = os.fdopen(descriptor, "w", encoding="utf-8")
         descriptor = -1
         with handle:
-            json.dump(value, handle, sort_keys=True, ensure_ascii=False, indent=2)
-            handle.write("\n")
+            handle.write(rendered)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_path, path)
@@ -368,6 +402,8 @@ def validate_result_object(result: Any, schema: str) -> dict[str, int]:
         raise CacheError("result JSON must contain only body and summary")
     if not isinstance(result["body"], str) or not isinstance(result["summary"], dict):
         raise CacheError("result body must be text and summary must be an object")
+    if len(result["body"].encode("utf-8")) > RESULT_MAX_UTF8_BYTES:
+        raise CacheError(f"result body exceeds the {RESULT_MAX_UTF8_BYTES}-byte limit")
     counts = validate_hml(result["body"]) if schema == "hml" else validate_checklist(result["body"])
     if result["summary"] != counts:
         raise CacheError("result summary object does not match validated body counts")
@@ -388,10 +424,7 @@ def command_key(args: argparse.Namespace) -> None:
 
 
 def command_validate_result(args: argparse.Namespace) -> None:
-    try:
-        text = Path(args.file).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        raise CacheError(f"cannot read {args.file}: {exc}") from exc
+    text = read_bounded_text(Path(args.file), RESULT_MAX_UTF8_BYTES, "result")
     allowed_categories = None
     if args.allowed_category:
         if args.schema != "hml":

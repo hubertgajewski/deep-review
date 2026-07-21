@@ -50,7 +50,7 @@ disabled = []
 
 `max_iterations` values above 3 are invalid. `final_guard` is intentionally not configurable.
 
-`description_max_chars` defaults to 12,000 Unicode code points. The package-owned absolute maximum is 20,000; larger configured values are clamped and reported. `0` is retained only as a compatibility request for that package maximum and never means unlimited. Negative or non-integer values are invalid. Apply this limit before prompt construction as defined by [Prompt budgets and coverage](prompt-budgets.md). The package-owned 120,000-byte UTF-8 limit for each complete reviewer prompt is not configurable.
+`description_max_chars` defaults to 12,000 Unicode code points. The package-owned absolute maximum is 20,000; larger configured values are clamped and reported independently from whether the description is full, truncated, or omitted. `0` is retained only as a compatibility request for that package maximum and never means unlimited. Negative or non-integer values are invalid. Apply this limit before prompt construction as defined by [Prompt budgets and coverage](prompt-budgets.md). The package-owned model-input, inline-prompt, context-read, chunk-count, aggregate prompt-byte, model-call, concurrency, result, and cache-record limits are not configurable.
 
 `blocking_levels` accepts only `HIGH`, `MEDIUM`, `LOW`, and `CHECKLIST_FAIL`. `CHECKLIST_FAIL` is the canonical global token for checklist `fail` results; reject unknown values and duplicates.
 

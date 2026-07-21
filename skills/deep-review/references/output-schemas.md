@@ -62,7 +62,7 @@ MALFORMED: <schema violation>
 
 `UNAVAILABLE` and `MALFORMED` prevent readiness.
 
-When a logical agent needs multiple bounded prompts, validate each chunk result independently before merging it under [Prompt budgets and coverage](prompt-budgets.md). A malformed or unavailable chunk prevents a complete logical-agent result; never recount only the chunks that happened to return.
+When a logical agent needs multiple bounded prompts, validate each chunk result independently before merging findings under [Prompt budgets and coverage](prompt-budgets.md). A malformed, unavailable, over-budget, or unsynthesized multi-chunk result prevents a complete logical-agent result; never recount only the chunks that happened to return or treat merged findings as cross-chunk semantic synthesis.
 
 ## Aggregate decision
 

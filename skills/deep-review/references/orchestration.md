@@ -60,11 +60,11 @@ Large-diff bucketing decides which content is required; it never permits an over
 
 ## Prompt chunks and coverage
 
-Follow [Prompt budgets and coverage](prompt-budgets.md) after bucketing and per-agent scope matching. The hard 120,000-byte UTF-8 limit applies to the complete final prompt, not only the inline diff. Build an ordered per-agent chunk manifest with exact payload spans and hashes, then measure every prompt again after the final ordinal and total are known.
+Follow [Prompt budgets and coverage](prompt-budgets.md) after bucketing and per-agent scope matching. The hard 120,000-byte UTF-8 limit applies to every complete model turn; initial inline prompts are limited to 96,000 bytes so metered context reads retain a bounded reserve. Build an ordered per-agent chunk manifest with exact payload spans and hashes, validate all per-agent and per-review resource ceilings, then measure every prompt again after the final ordinal and total are known. Dispatch through the bounded worker queue only after the complete plan passes.
 
 One huge file is split at hunk, line, and finally Unicode-code-point boundaries without gaps. Several huge files retain accepted manifest and per-file block order. Full-review mode uses the same chunker rather than requiring all content in one invocation. Every chunk repeats trusted framing, complete `CHANGED_FILES`, and immutable reviewed-state identity.
 
-Treat chunks as required evidence belonging to one logical roster agent. Validate each output, merge valid results by the schema-specific rules, and report global valid/required chunk counts. Missing or unavailable chunk evidence produces `incomplete` unless another valid chunk has a configured blocker, in which case the aggregate remains `blocked` with an incomplete-evidence warning. Only complete logical-agent results are eligible for caching or readiness.
+Treat chunks as required evidence belonging to one logical roster agent. Validate each bounded output, merge valid findings by the schema-specific rules, and report global valid/required chunk counts. Independent chunk findings are not semantic synthesis: until a package-defined bounded synthesis protocol exists, any logical agent requiring multiple chunks remains incomplete even when all transport chunks returned. Missing, over-budget, unavailable, or unsynthesized evidence produces `incomplete` unless another valid chunk has a configured blocker, in which case the aggregate remains `blocked` with an incomplete-evidence warning. Only semantically complete logical-agent results are eligible for caching or readiness.
 
 ## Cache keys and iterations
 
@@ -133,6 +133,6 @@ Starting a new sequence resets only its iteration and guard-history flags. It do
 
 ## Final guard
 
-Require the guard when any current convergence sequence used a reused result or ran only targeted agents. Rebuild triggers, chunk plans, and prompt frames, disable reuse, and run every required chunk for all currently matching agents. Ensure required large-diff and prompt-chunk coverage are both complete. Fresh guard output supersedes prior cached output.
+Require the guard when any current convergence sequence used a reused result or ran only targeted agents. Rebuild triggers, chunk plans, prompt frames, and the complete resource plan; disable reuse; and run every required chunk for all currently matching agents only within the remaining per-review budgets. Ensure required large-diff, prompt-chunk, and semantic coverage are complete. Fresh guard output supersedes prior cached output.
 
 The guard does not advance iteration. If it blocks, persist `blocked` and wait for a changed reviewed state. Never loop a guard automatically.
