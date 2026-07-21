@@ -9,6 +9,7 @@ Deep Review is a configurable, review-only Agent Skill that coordinates speciali
 - Adds language-semantic review for supported file types.
 - Reports findings with consistent severities and returns `ready`, `blocked`, or `incomplete`.
 - Reuses validated nonblocking results during repeated fix-and-review loops while requiring a fresh final guard before reporting readiness.
+- Bounds contributor-controlled descriptions and every reviewer prompt, chunking oversized required hunks without allowing readiness until all chunks are covered.
 
 ## Important boundaries
 

@@ -138,7 +138,7 @@ reviewer focus
 full-review flag
 ```
 
-Hash the effective propagated description after the configured inclusion/truncation policy. Report truncation with original and effective character counts.
+Resolve the description limit and truncate the provider-decoded text before prompt construction, following [Prompt budgets and coverage](prompt-budgets.md). Report original and effective character counts as Unicode code points, including omission or package-maximum clamping. After frame-tag encoding, hash the exact UTF-8 bytes propagated inside `<untrusted-change-description>`; never hash the original oversized text as `description_hash`.
 
 Use the accepted preflight manifest as the authority for changed paths and statuses. Parse `diff --git`, `---`, `+++`, rename/copy headers, and binary markers only to partition accepted content and cross-check it against that manifest. Ignore `/dev/null`. Preserve first-seen order and statuses.
 

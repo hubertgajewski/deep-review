@@ -28,7 +28,7 @@ deny_components = [".env*", "*credential*", "*.key", "*.pem", "*.p12", "*.pfx", 
 provider = "auto"
 remote = "origin"
 include_description = true
-description_max_chars = 0
+description_max_chars = 12000
 
 [large_diff]
 full_review = false
@@ -49,6 +49,8 @@ disabled = []
 ```
 
 `max_iterations` values above 3 are invalid. `final_guard` is intentionally not configurable.
+
+`description_max_chars` defaults to 12,000 Unicode code points. The package-owned absolute maximum is 20,000; larger configured values are clamped and reported. `0` is retained only as a compatibility request for that package maximum and never means unlimited. Negative or non-integer values are invalid. Apply this limit before prompt construction as defined by [Prompt budgets and coverage](prompt-budgets.md). The package-owned 120,000-byte UTF-8 limit for each complete reviewer prompt is not configurable.
 
 `blocking_levels` accepts only `HIGH`, `MEDIUM`, `LOW`, and `CHECKLIST_FAIL`. `CHECKLIST_FAIL` is the canonical global token for checklist `fail` results; reject unknown values and duplicates.
 

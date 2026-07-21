@@ -110,6 +110,24 @@ class KeyTests(unittest.TestCase):
                     CACHE.sha256_bytes(CACHE.canonical_bytes(changed)), original_key
                 )
 
+    def test_effective_description_and_chunk_plan_invalidate_cache_identity(self) -> None:
+        original = manifest()
+        original["description_hash"] = digest("effective description")
+        original["scoped_prompt_hash"] = digest("chunks:1,2,3")
+        original_key = CACHE.sha256_bytes(CACHE.canonical_bytes(original))
+
+        changed_description = dict(original)
+        changed_description["description_hash"] = digest("different effective description")
+        changed_plan = dict(original)
+        changed_plan["scoped_prompt_hash"] = digest("chunks:1,3,2")
+
+        self.assertNotEqual(
+            CACHE.sha256_bytes(CACHE.canonical_bytes(changed_description)), original_key
+        )
+        self.assertNotEqual(
+            CACHE.sha256_bytes(CACHE.canonical_bytes(changed_plan)), original_key
+        )
+
 
 class ResultValidationTests(unittest.TestCase):
     def test_hml_empty_and_findings(self) -> None:

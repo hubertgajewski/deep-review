@@ -21,6 +21,7 @@ class PackageTests(unittest.TestCase):
             "references/configuration.md",
             "references/orchestration.md",
             "references/output-schemas.md",
+            "references/prompt-budgets.md",
             "references/scope-resolution.md",
             "references/providers/github.md",
             "references/providers/gitlab.md",
@@ -144,6 +145,81 @@ class PackageTests(unittest.TestCase):
         self.assertIn("cannot produce `ready`", orchestration)
         self.assertIn("dispatch: serial fallback", main)
         self.assertIn("Do not run builds, tests, linters", main)
+
+    def test_prompt_budgets_and_chunk_coverage_contract_is_explicit(self) -> None:
+        main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
+        budgets = (SKILL / "references" / "prompt-budgets.md").read_text(encoding="utf-8")
+        schemas = (SKILL / "references" / "output-schemas.md").read_text(encoding="utf-8")
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+
+        constants = {
+            name: int(value)
+            for name, value in re.findall(
+                r"^(DEFAULT_DESCRIPTION_MAX_CHARS|ABSOLUTE_DESCRIPTION_MAX_CHARS|"
+                r"PROMPT_MAX_UTF8_BYTES) = (\d+)$",
+                budgets,
+                re.MULTILINE,
+            )
+        }
+        self.assertEqual(
+            constants,
+            {
+                "DEFAULT_DESCRIPTION_MAX_CHARS": 12000,
+                "ABSOLUTE_DESCRIPTION_MAX_CHARS": 20000,
+                "PROMPT_MAX_UTF8_BYTES": 120000,
+            },
+        )
+        self.assertGreater(constants["DEFAULT_DESCRIPTION_MAX_CHARS"], 0)
+        self.assertLessEqual(
+            constants["DEFAULT_DESCRIPTION_MAX_CHARS"],
+            constants["ABSOLUTE_DESCRIPTION_MAX_CHARS"],
+        )
+        for document in (main, config, user_config):
+            self.assertIn("description_max_chars = 12000", document)
+        self.assertIn("never means unlimited", budgets)
+        self.assertIn("cannot increase or disable the absolute maximum", budgets)
+        self.assertIn("before prompt sanitization or construction", budgets)
+        self.assertIn("original", budgets)
+        self.assertIn("effective", budgets)
+        self.assertIn("exact UTF-8 bytes placed inside", budgets)
+        self.assertIn("exact UTF-8 bytes propagated", scope)
+
+        self.assertIn("every complete prompt submitted to an agent", budgets)
+        self.assertIn("No consumer configuration may change this limit", budgets)
+        self.assertIn("fixed prompt framing exceeds", budgets)
+        self.assertIn("complete `CHANGED_FILES` manifest", budgets)
+        self.assertIn("immutable base and head identities", budgets)
+        self.assertIn("reviewed_state_hash", budgets)
+
+        chunk_steps = (
+            "Keep complete file blocks together",
+            "Split an oversized file at existing hunk boundaries",
+            "Split an oversized hunk at diff-line boundaries",
+            "Split a single oversized diff line only at a Unicode-code-point boundary",
+        )
+        positions = [budgets.index(step) for step in chunk_steps]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("greedy first-fit in canonical stream order", budgets)
+        self.assertIn("contiguous, non-overlapping, and gap-free", budgets)
+        self.assertIn("One huge file", orchestration)
+        self.assertIn("Several huge files", orchestration)
+        self.assertIn("Full-review mode uses the same chunker", orchestration)
+        self.assertIn("Normal and high-risk content remains required", orchestration)
+
+        self.assertIn("ordered required chunk manifest", budgets)
+        self.assertIn("Retry only the failed chunk once", budgets)
+        self.assertIn("Partial chunk results are not cached", budgets)
+        self.assertIn("scoped_prompt_hash", budgets)
+        self.assertIn("derived chunk plan is excluded to avoid a cycle", orchestration)
+        self.assertIn("ordered chunk identities instead belong to `scoped_prompt_hash`", orchestration)
+        self.assertIn("prompt-coverage: complete", budgets)
+        self.assertIn("prompt-coverage: incomplete", budgets)
+        self.assertIn("never `ready`", budgets)
+        self.assertIn("required chunk is missing", budgets)
+        self.assertIn("required chunk", schemas)
 
     def test_remote_context_and_drift_contracts_are_explicit(self) -> None:
         scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")

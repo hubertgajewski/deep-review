@@ -5,6 +5,7 @@
 - Derived scope
 - Dispatch defaults
 - Large diffs
+- Prompt chunks and coverage
 - Cache keys and iterations
 - Final guard
 
@@ -55,6 +56,16 @@ Metadata-only placeholders include path, status, bucket, and omitted changed-lin
 
 A metadata-only required path makes coverage partial and cannot produce `ready`. Require a distinct later invocation whose effective `full_review` value is true; do not promote the partial pass automatically.
 
+Large-diff bucketing decides which content is required; it never permits an oversized required hunk to be omitted. Normal and high-risk content remains required in both partial and full modes. Effective full-review mode makes every required non-generated hunk part of the bounded prompt plan.
+
+## Prompt chunks and coverage
+
+Follow [Prompt budgets and coverage](prompt-budgets.md) after bucketing and per-agent scope matching. The hard 120,000-byte UTF-8 limit applies to the complete final prompt, not only the inline diff. Build an ordered per-agent chunk manifest with exact payload spans and hashes, then measure every prompt again after the final ordinal and total are known.
+
+One huge file is split at hunk, line, and finally Unicode-code-point boundaries without gaps. Several huge files retain accepted manifest and per-file block order. Full-review mode uses the same chunker rather than requiring all content in one invocation. Every chunk repeats trusted framing, complete `CHANGED_FILES`, and immutable reviewed-state identity.
+
+Treat chunks as required evidence belonging to one logical roster agent. Validate each output, merge valid results by the schema-specific rules, and report global valid/required chunk counts. Missing or unavailable chunk evidence produces `incomplete` unless another valid chunk has a configured blocker, in which case the aggregate remains `blocked` with an incomplete-evidence warning. Only complete logical-agent results are eligible for caching or readiness.
+
 ## Cache keys and iterations
 
 Construct one canonical JSON key manifest per agent with:
@@ -85,6 +96,8 @@ Use empty strings for non-applicable remote fields. Never omit required names. C
 
 For a language agent, `agent_prompt_hash` covers the exact effective base prompt plus enabled rule fragments in canonical declared order. The existing `config_hash` covers the complete trusted configuration. A configuration change or enabled-fragment change therefore invalidates reuse without another key-manifest field.
 
+`description_hash` is the hash of the exact effective, frame-tag-encoded description bytes propagated to every chunk, including the exact empty value when omitted. `scoped_prompt_hash` is the SHA-256 of canonical JSON containing the ordered hashes of every exact complete chunk prompt and the ordered chunk identities. It therefore commits the cache record to description propagation, one huge file or several huge files, deterministic chunk order, complete-manifest framing, effective full-review coverage, and every package prompt-budget constant.
+
 Build the convergence `scope_key` only from stable request identity:
 
 - every mode: repository identity, mode, and reviewer-focus hash;
@@ -93,9 +106,9 @@ Build the convergence `scope_key` only from stable request identity:
 - base/range: normalized validated selectors and range operator;
 - local: no additional selector.
 
-Exclude base/head revisions, diff and description hashes, untracked identities, bucket coverage, and effective full-review state from `scope_key`; include all changing reviewed content in `reviewed_state_hash`. This keeps one fix/review sequence stable while its reviewed state changes.
+Exclude base/head revisions, diff and description hashes, untracked identities, bucket coverage, and effective full-review state from `scope_key`; include all changing reviewed content in `reviewed_state_hash`. The reviewed-state hash includes the exact effective description hash, accepted diff and untracked identities, and bucket/full-review coverage. The derived chunk plan is excluded to avoid a cycle because every `chunk_id` already commits to `reviewed_state_hash`; ordered chunk identities instead belong to `scoped_prompt_hash`. This keeps one fix/review sequence stable while its reviewed state changes.
 
-Persist one latest record per agent. A record stores the key, classification (`nonblocking`, `blocking`, or `incomplete`), iteration, result body, summary counts, and timestamp. It never stores raw scope input separately.
+Persist one latest complete logical-agent record per agent. A record stores the key, classification (`nonblocking`, `blocking`, or `incomplete`), iteration, merged result body, summary counts, and timestamp. It never stores raw scope input, individual chunk prompts, or partial chunk results separately.
 
 The record also stores the validated canonical key manifest, including its sorted dependency identities. On a later invocation, use `cache.py probe` to obtain only a structurally and schema-validated prior manifest, re-hash its dependency paths from the immutable reviewed-head context rather than the caller's checkout, construct the complete candidate key, and use `cache.py lookup` for an exact match. Treat exit code 3 as a miss. Treat corrupt, unreadable, or unwritable cache as unavailable and run required agents fresh; keep the current invocation's iteration state in memory.
 
@@ -120,6 +133,6 @@ Starting a new sequence resets only its iteration and guard-history flags. It do
 
 ## Final guard
 
-Require the guard when any current convergence sequence used a reused result or ran only targeted agents. Rebuild triggers and prompt frames, disable reuse, and run all currently matching agents. Ensure required large-diff coverage is full. Fresh guard output supersedes prior cached output.
+Require the guard when any current convergence sequence used a reused result or ran only targeted agents. Rebuild triggers, chunk plans, and prompt frames, disable reuse, and run every required chunk for all currently matching agents. Ensure required large-diff and prompt-chunk coverage are both complete. Fresh guard output supersedes prior cached output.
 
 The guard does not advance iteration. If it blocks, persist `blocked` and wait for a changed reviewed state. Never loop a guard automatically.

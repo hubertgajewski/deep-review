@@ -17,7 +17,7 @@ cache_dir = ".deep-review-cache"
 provider = "auto"
 remote = "origin"
 include_description = true
-description_max_chars = 0
+description_max_chars = 12000
 
 [language_agents]
 disabled = []
@@ -27,6 +27,14 @@ disabled = []
 ```
 
 Configuration is loaded from the trusted committed revision. For local and path reviews, that revision is `HEAD`; an uncommitted policy edit is reviewed as input but cannot control the same review. Malformed, duplicate, or unknown values make the result `incomplete` rather than being guessed or ignored.
+
+## Bound descriptions and reviewer prompts
+
+Remote change descriptions default to at most 12,000 Unicode characters. You may choose a smaller value. The package always enforces a 20,000-character absolute maximum and clamps larger values; legacy `description_max_chars = 0` requests that maximum rather than unlimited propagation. Set `include_description = false` to omit descriptions.
+
+Deep Review reports original and effective description character counts whenever it omits, truncates, or clamps a description. Its cache identity uses the exact effective text sent to reviewers, not the oversized original.
+
+Every complete reviewer prompt is limited to 120,000 UTF-8 bytes. When required normal, high-risk, or full-review hunks do not fit, Deep Review deterministically splits them into bounded chunks while repeating the complete changed-file manifest and immutable review identity. A review cannot be `ready` until every required chunk has valid evidence. Missing chunk evidence produces `incomplete`, or `blocked` with an incomplete-evidence warning when another chunk already found a blocker. These package-owned limits cannot be increased by consumer configuration.
 
 ## Blocking levels
 
