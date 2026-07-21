@@ -159,9 +159,7 @@ class PackageTests(unittest.TestCase):
             self.assertIn("shared Remote evidence transport", text)
             self.assertIn("isolated blobless store", text)
             self.assertIn("exact-object streaming capability", text)
-            self.assertIn("status `200`", text)
-            self.assertIn("raw response body only as a byte stream", text)
-            self.assertIn("Reject cross-origin redirects", text)
+            self.assertIn("untouched HTTP response", text)
             self.assertIn("retained complete logical manifest", text)
             self.assertIn("metadata again", text)
             self.assertIn("retry the complete metadata-object-path-preflight-diff-metadata", text)
@@ -199,6 +197,9 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Use the raw-diff, relationship, hunk, gitlink", scope)
         self.assertIn("one authenticated exact-object byte stream", scope)
         self.assertIn("exact-object streaming capability", scope)
+        self.assertIn("Require status `200`", scope)
+        self.assertIn("reject cross-origin redirects", scope)
+        self.assertIn("without adapter buffering, decoding, logging", scope)
 
     def test_configuration_safety_contracts_are_explicit(self) -> None:
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
@@ -227,8 +228,12 @@ class PackageTests(unittest.TestCase):
         self.assertNotEqual(
             metadata["diff_refs"]["start_sha"], metadata["diff_refs"]["base_sha"]
         )
-        self.assertIn("fetched target ref to resolve exactly", gitlab)
-        self.assertIn("first snapshot's `diff_refs.start_sha`", gitlab)
+        advanced_target_sha = "4" * 40
+        self.assertNotEqual(advanced_target_sha, metadata["diff_refs"]["start_sha"])
+        self.assertIn("fetched target-ref identity only as the current drift value", gitlab)
+        self.assertIn("mismatch with `start_sha` is reported", gitlab)
+        self.assertIn("does not fail scope or change the immutable range", gitlab)
+        self.assertIn("Independently materialize and verify", gitlab)
         self.assertIn("use `base_sha` as the effective diff base", gitlab)
         self.assertIn("recorded start SHA", gitlab)
         self.assertIn("`start_sha`, `base_sha`, and `head_sha`", gitlab)

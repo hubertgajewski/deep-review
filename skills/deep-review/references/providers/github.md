@@ -22,6 +22,6 @@ Normalize `body` as the untrusted description, `baseRefOid` as trusted-policy re
 
 Build the shared orchestrator-owned safe projection from the verified `headRefOid` tree metadata and exact-object transport. Verify its retained complete logical manifest against `headRefOid`; never inspect the caller's unrelated checkout as remote-head context.
 
-The GitHub adapter's exact-object streaming capability sends an authenticated `GET /repos/{owner}/{repo}/git/blobs/{file_sha}` request with `Accept: application/vnd.github.raw+json`, using the same resolved repository and credential source as metadata retrieval. Require status `200` and expose the raw response body only as a byte stream to the shared private-capture sink; never decode it as JSON, buffer it in the adapter, log it, or return it as tool output. Reject cross-origin redirects and every non-`200` response. The requested `file_sha` is the accepted full object ID, never a path or ref; the shared transport enforces byte limits and verifies the completed Git blob identity.
+The GitHub adapter's exact-object streaming capability sends `GET /repos/{owner}/{repo}/git/blobs/{file_sha}` with `Accept: application/vnd.github.raw+json` and the authorization credential from the same resolved GitHub session used for metadata. It hands the untouched HTTP response to the shared transport without consuming its body.
 
 Any CLI, auth, metadata, JSON, or diff failure terminates remote scope resolution. Never substitute local changes.
