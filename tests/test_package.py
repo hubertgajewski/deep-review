@@ -153,7 +153,7 @@ class PackageTests(unittest.TestCase):
             self.assertIn("Never substitute local changes", text)
             self.assertIn("temporary detached worktree", text)
             self.assertIn("metadata again", text)
-            self.assertIn("retry the complete metadata-object-diff-metadata", text)
+            self.assertIn("retry the complete metadata-object-path-preflight-diff-metadata", text)
             self.assertIn("second mismatch fails scope resolution", text)
             self.assertIn("verified immutable", text)
             self.assertIn("never use a change-number-based patch", text)
@@ -166,8 +166,8 @@ class PackageTests(unittest.TestCase):
 
         github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")
         gitlab = (SKILL / "references" / "providers" / "gitlab.md").read_text(encoding="utf-8")
-        self.assertIn('git diff "$BASE_SHA...$HEAD_SHA"', github)
-        self.assertIn('git diff "$BASE_SHA" "$HEAD_SHA"', gitlab)
+        self.assertIn('git diff --find-renames --find-copies "$BASE_SHA...$HEAD_SHA"', github)
+        self.assertIn('git diff --find-renames --find-copies "$BASE_SHA" "$HEAD_SHA"', gitlab)
         self.assertNotIn("gh pr diff", github)
         self.assertNotIn("glab mr diff", gitlab)
 
@@ -183,6 +183,66 @@ class PackageTests(unittest.TestCase):
         self.assertIn("project_checklist = []", config)
         self.assertIn("orchestrator-owned transport metadata", contract)
         self.assertIn("duplicates another extension domain", contract)
+
+    def test_denied_paths_are_preflighted_before_content_in_every_mode(self) -> None:
+        main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+
+        self.assertLess(main.index("metadata-only path preflight"), main.index("Only after preflight succeeds"))
+        self.assertIn("rename/copy source and destination", main)
+        self.assertIn("never reduce a mixed scope to an allowed subset", main)
+
+        local_metadata = "git diff --name-status -z --find-renames --find-copies HEAD"
+        local_content = "retrieve the tracked content diff"
+        self.assertLess(scope.index(local_metadata), scope.index(local_content))
+        self.assertIn("git ls-files --others --exclude-standard -z", scope)
+        self.assertIn("newly appearing denied path", scope)
+        self.assertIn("byte-for-byte", scope)
+
+        range_metadata = (
+            "git diff --name-status -z --find-renames --find-copies "
+            "<validated-immutable-range>"
+        )
+        range_content = "git diff --find-renames --find-copies <validated-immutable-range>"
+        self.assertLess(scope.index(range_metadata), scope.index(range_content))
+        self.assertIn("both source and destination", scope)
+        self.assertIn("malformed, truncated, or unknown status record fails scope resolution", scope)
+        self.assertIn("three-dot range's merge base", scope)
+        self.assertIn("Treat the manifest as one atomic scope", scope)
+        self.assertIn("before any candidate content reaches tool output or model context", scope)
+        self.assertIn("before retrieving content diffs", scope)
+        self.assertIn("Only after the complete path preflight and content retrieval succeed", scope)
+
+        provider_commands = {
+            "github": (
+                'git diff --name-status -z --find-renames --find-copies '
+                '"$BASE_SHA...$HEAD_SHA"',
+                'git diff --find-renames --find-copies "$BASE_SHA...$HEAD_SHA"',
+            ),
+            "gitlab": (
+                'git diff --name-status -z --find-renames --find-copies '
+                '"$BASE_SHA" "$HEAD_SHA"',
+                'git diff --find-renames --find-copies "$BASE_SHA" "$HEAD_SHA"',
+            ),
+        }
+        for provider, (metadata_command, content_command) in provider_commands.items():
+            text = (SKILL / "references" / "providers" / f"{provider}.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertLess(text.index(metadata_command), text.index(content_command))
+            self.assertIn("verified immutable", text)
+            self.assertIn("including both sides of every rename or copy", text)
+            self.assertIn("Any path-preflight rejection terminates immediately", text)
+        github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")
+        self.assertIn('git merge-base "$BASE_SHA" "$HEAD_SHA"', github)
+        self.assertIn("use its tree as the effective diff base", github)
+
+        self.assertIn("No trigger, snapshot, prompt, bucket, or dependency hash", orchestration)
+        self.assertIn("before content diff retrieval", orchestration)
+        self.assertIn("One denied path fails the entire scope", user_config)
+        self.assertIn("allowed/denied mixed change", user_config)
 
     def test_language_rule_catalogs_are_complete_and_unique(self) -> None:
         expected = {

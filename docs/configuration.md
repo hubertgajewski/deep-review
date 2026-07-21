@@ -38,6 +38,12 @@ blocking_levels = ["HIGH", "CHECKLIST_FAIL"]
 
 This changes aggregation, not reviewer instructions or severity guidance. A consumer cannot disable the final guard or increase `max_iterations` above 3.
 
+## Deny credential-bearing paths
+
+`deny_components` is a safety boundary applied case-insensitively to each path component. Its defaults reject `.env*`, `*credential*`, `*.key`, `*.pem`, `*.p12`, `*.pfx`, `*secret*`, and `*password*`. You may replace the list in trusted committed configuration when a repository needs different path policy.
+
+Deep Review first enumerates the complete changed-path manifest without patch bodies, including untracked paths and both sides of renames or copies. It validates the whole manifest before retrieving diff hunks, reading untracked files, creating a snapshot, or hashing dependencies. One denied path fails the entire scope; an allowed/denied mixed change is never reduced to only its allowed files.
+
 ## Disable a language reviewer
 
 All built-in language reviewers are enabled by default. Disable a complete reviewer by name:

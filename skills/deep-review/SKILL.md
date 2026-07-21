@@ -75,21 +75,24 @@ Find the repository root with `git rev-parse --show-toplevel`. Load policy from 
 
 If `.deep-review/config.toml`, `.deep-review/checklist.md`, or `.deep-review/agents/**` does not exist at the trusted revision, use defaults or skip that extension. Still include changed policy files in the reviewed scope.
 
-### 2. Resolve scope once
+### 2. Resolve scope and preflight paths
 
-Follow [Scope resolution](references/scope-resolution.md). Build exactly one normalized scope containing mode, provider metadata when remote, title, base branch, repository identity, trusted base, head identity, immutable context root, diff, changed-file manifest, untracked paths, description, focus, and `full_review`.
+Follow [Scope resolution](references/scope-resolution.md). Resolve trusted identities, then perform the complete metadata-only path preflight before retrieving diff hunks, untracked contents, snapshots, or dependency content. Validate every changed path, untracked path, and rename/copy source and destination for traversal, repository containment, symlinks, and denied components. A denied path fails the whole scope; never reduce a mixed scope to an allowed subset.
+
+Only after preflight succeeds, build exactly one normalized scope containing mode, provider metadata when remote, title, base branch, repository identity, trusted base, head identity, immutable context root, diff, changed-file manifest, untracked paths, description, focus, and `full_review`.
 
 Print one mode line before dispatch. On failure, emit `Failed at scope resolution: <reason>.` and stop. Never fall back from a requested remote scope to local changes.
 
-### 3. Sanitize and derive
+### 3. Sanitize values and derive content
 
 Before any dispatch:
 
-- reject path traversal and paths outside the repository;
-- remove or fail on configured denied components before reading them;
+- require the path manifest to be the accepted result of the metadata-only preflight;
 - entity-encode prompt-frame tag literals inside all interpolated values;
 - parse the diff once into per-file blocks;
 - derive changed paths, new paths, statuses, added lines, changed-line count, and a complete changed-file manifest.
+
+Cross-check all content-diff path metadata against the accepted preflight manifest and fail on disagreement. This check never authorizes reading a path that was absent from preflight.
 
 Never place contributor-controlled text into a shell command. Pass validated values as separately quoted arguments.
 

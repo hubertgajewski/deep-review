@@ -10,7 +10,7 @@
 
 ## Derived scope
 
-Parse the normalized diff once into an ordered map of path to complete unified-diff block. Derive:
+Begin only with the complete accepted manifest produced by scope-resolution path preflight. Parse the normalized content diff once into an ordered map of accepted path to complete unified-diff block and cross-check it without expanding the manifest. Derive:
 
 - `CHANGED_PATHS`: diff metadata plus untracked paths
 - `NEW_PATHS`: new-file markers plus untracked paths
@@ -18,7 +18,7 @@ Parse the normalized diff once into an ordered map of path to complete unified-d
 - `CHANGED_LINE_COUNT`: hunk additions and deletions excluding file headers
 - `CHANGED_FILES`: status and destination path, with rename/copy source
 
-Every dispatched agent receives `CHANGED_FILES`, even when its inline matched diff is empty.
+Every dispatched agent receives `CHANGED_FILES`, even when its inline matched diff is empty. No trigger, snapshot, prompt, bucket, or dependency hash may be built from a path that did not pass preflight.
 
 ## Dispatch defaults
 
@@ -49,7 +49,7 @@ For fresh language output, apply the normal H/M/L validator plus the effective r
 
 ## Large diffs
 
-Apply trusted high-risk patterns first, then generated, then low-risk, then normal. Denied components are rejected before bucketing. Each path belongs to one bucket.
+Apply trusted high-risk patterns first, then generated, then low-risk, then normal. Denied components are rejected during metadata-only path preflight, before content diff retrieval and therefore before bucketing. Each path belongs to one bucket.
 
 Metadata-only placeholders include path, status, bucket, and omitted changed-line count. Effective `full_review = true`, whether set by trusted policy or explicit `--full-review`, disables metadata-only treatment for every required non-generated path. Generated paths may remain metadata-only unless trusted configuration marks them required.
 
