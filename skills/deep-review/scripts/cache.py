@@ -45,9 +45,11 @@ PRIVATE_KEY_RE = re.compile(
 )
 SENSITIVE_HEADER_RE = re.compile(
     r"((?:\b(?:authorization|(?:set-)?cookie)\s*[:=]\s*|"
-    r"['\"](?:authorization|(?:set-)?cookie)['\"]\s*[:,=]\s*|"
+    r"['\"](?:authorization|(?:set-)?cookie)['\"]\s*[:=]\s*|"
     r"\[\s*['\"](?:authorization|(?:set-)?cookie)['\"]\s*\]"
-    r"\s*[:=]\s*))[^\r\n]*",
+    r"\s*[:=]\s*|"
+    r"\b(?:setRequestHeader|setHeader|addHeader|header)\s*\(\s*"
+    r"['\"](?:authorization|(?:set-)?cookie)['\"]\s*,\s*))[^\r\n]*",
     re.IGNORECASE,
 )
 NAMED_CREDENTIAL_RE = re.compile(

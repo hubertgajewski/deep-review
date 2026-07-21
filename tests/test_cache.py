@@ -392,8 +392,9 @@ class ResultValidationTests(unittest.TestCase):
 
     def test_bare_header_names_followed_by_commas_are_not_assignments(self) -> None:
         raw = (
-            "LOW | authorization,review | src/authorization,notes.txt:12 | "
-            "authorization, then validate; cookie, if present | keep the prose\n"
+            'LOW | "Authorization",review | src/"authorization",notes.txt:12 | '
+            'authorization, then validate; cookie, if present; '
+            'configured headers: "Authorization", "Content-Type" | keep the prose\n'
             "summary: 0 high / 0 medium / 1 low\n"
         )
 
