@@ -176,19 +176,23 @@ class PackageTests(unittest.TestCase):
         gitlab = (SKILL / "references" / "providers" / "gitlab.md").read_text(encoding="utf-8")
         self.assertIn(
             'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
+            '--no-abbrev --ignore-submodules=none '
             '"$BASE_SHA...$HEAD_SHA"',
             github,
         )
         self.assertIn(
             'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
+            '--no-abbrev --ignore-submodules=none '
             '"$BASE_SHA" "$HEAD_SHA"',
             gitlab,
         )
         for text in (github, gitlab):
             self.assertIn("raw Git environment sanitization", text)
+            self.assertIn("A safety-ceiling failure does the same", text)
             self.assertIn("retrieve accepted raw blobs", text)
             self.assertIn("construct normalized hunks internally", text)
-            self.assertIn("Recognize only exact-identity rename/copy relationships", text)
+            self.assertIn("mode-compatible exact-identity rename/copy relationships", text)
+            self.assertIn("represent gitlinks from full object IDs", text)
             self.assertIn("Never request Git similarity detection or content hunks", text)
         self.assertNotIn("gh pr diff", github)
         self.assertNotIn("glab mr diff", gitlab)
@@ -217,7 +221,8 @@ class PackageTests(unittest.TestCase):
         self.assertIn("never reduce a mixed scope to an allowed subset", main)
 
         local_metadata = (
-            "git diff --no-ext-diff --no-textconv --cached --raw -z --no-renames HEAD"
+            "git diff --no-ext-diff --no-textconv --cached --raw -z --no-renames "
+            "--no-abbrev --ignore-submodules=none HEAD"
         )
         local_content = "construct tracked hunks and deterministic relationships internally"
         self.assertLess(scope.index(local_metadata), scope.index(local_content))
@@ -290,9 +295,10 @@ class PackageTests(unittest.TestCase):
 
         range_metadata = (
             "git diff --no-ext-diff --no-textconv --raw -z --no-renames "
+            "--no-abbrev --ignore-submodules=none "
             "<validated-immutable-range>"
         )
-        range_content = "Only after every candidate is accepted may the orchestrator retrieve accepted raw blobs"
+        range_content = "Only after every candidate is accepted and immutable body sizes pass"
         self.assertLess(scope.index(range_metadata), scope.index(range_content))
         self.assertIn("both endpoints were accepted", scope)
         self.assertIn("malformed, truncated, or unknown status record fails scope resolution", scope)
@@ -309,10 +315,12 @@ class PackageTests(unittest.TestCase):
         provider_commands = {
             "github": (
                 'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
+                '--no-abbrev --ignore-submodules=none '
                 '"$BASE_SHA...$HEAD_SHA"'
             ),
             "gitlab": (
                 'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
+                '--no-abbrev --ignore-submodules=none '
                 '"$BASE_SHA" "$HEAD_SHA"'
             ),
         }
@@ -339,6 +347,8 @@ class PackageTests(unittest.TestCase):
         self.assertIn("--no-ext-diff", scope)
         self.assertIn("--no-textconv", scope)
         self.assertIn("--raw -z --no-renames", scope)
+        self.assertIn("--no-abbrev", scope)
+        self.assertIn("--ignore-submodules=none", scope)
         self.assertIn("diff.renameLimit", scope)
         self.assertIn("GIT_EXTERNAL_DIFF", scope)
         self.assertIn("GIT_DIFF_OPTS", scope)
@@ -363,6 +373,23 @@ class PackageTests(unittest.TestCase):
         self.assertIn("must not execute helpers", scope)
         self.assertIn("classify evidence as binary", scope)
         self.assertIn("never write objects, refs, or index state", scope)
+        self.assertIn("compatible Git mode classes", scope)
+        self.assertIn("gitlink mode `160000`", scope)
+        self.assertIn("Subproject commit <full-object-id>", scope)
+        self.assertIn("git cat-file --batch-check", scope)
+        for ceiling in (
+            "10,000 candidate paths",
+            "200,000 logical-tree entries",
+            "64 MiB of retained metadata",
+            "16 MiB per changed body",
+            "128 MiB across unique changed bodies",
+            "20,000,000 edit operations",
+            "64 MiB of normalized diff output",
+            "512 MiB total projected context",
+        ):
+            self.assertIn(ceiling, scope)
+        self.assertIn("fails the complete atomic scope without prompt construction or caching", scope)
+        self.assertIn("makes required context incomplete", scope)
 
     def test_git_raw_preflight_does_not_run_copy_similarity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -383,12 +410,20 @@ class PackageTests(unittest.TestCase):
             subprocess.run(["git", "add", "copy.txt"], cwd=repository, check=True)
 
             raw = subprocess.run(
-                ["git", "diff", "--cached", "--raw", "-z", "--no-renames", "HEAD"],
+                [
+                    "git", "diff", "--cached", "--raw", "-z", "--no-renames",
+                    "--no-abbrev", "--ignore-submodules=none", "HEAD",
+                ],
                 cwd=repository, check=True, capture_output=True,
             ).stdout
 
             self.assertIn(b"A\x00copy.txt\x00", raw)
             self.assertNotIn(b"source.txt", raw)
+            object_id = subprocess.run(
+                ["git", "hash-object", "copy.txt"],
+                cwd=repository, check=True, capture_output=True,
+            ).stdout.strip()
+            self.assertIn(object_id, raw)
             scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
             self.assertIn("body-free object-ID matching", scope)
 
@@ -444,7 +479,8 @@ class PackageTests(unittest.TestCase):
             safe_commands = (
                 [
                     "git", "diff", "--no-ext-diff", "--no-textconv", "--cached",
-                    "--raw", "-z", "--no-renames", "HEAD",
+                    "--raw", "-z", "--no-renames", "--no-abbrev",
+                    "--ignore-submodules=none", "HEAD",
                 ],
                 ["git", "ls-files", "--stage", "-z"],
                 ["git", "ls-files", "-v", "-z"],

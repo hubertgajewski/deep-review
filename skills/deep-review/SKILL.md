@@ -90,9 +90,10 @@ Print one mode line before dispatch. On failure, emit `Failed at scope resolutio
 Before any dispatch:
 
 - require the path manifest to be the accepted result of the metadata-only preflight;
-- enumerate changed endpoints with raw, no-rename Git metadata only; sanitize Git's environment, and defer blob reads plus internal rename/copy detection until the complete candidate preflight succeeds;
+- enumerate changed endpoints with raw, no-rename Git metadata using full object IDs and explicit submodule reporting; sanitize Git's environment, enforce the package's path, metadata, body, diff-work, and output ceilings, and defer blob reads plus mode-compatible exact-identity rename/copy detection until the complete candidate preflight succeeds;
 - reject unmerged local index entries, derive mutable candidates without Git worktree diff or filters, retain staged content only by exact stage-0 object identity, and capture local tracked, untracked, and path-mode bodies through a platform secure-open adapter anchored to the repository root;
 - derive local tracked hunks from a tracked-only snapshot, then append retained untracked inputs as independent synthetic additions without rename or copy detection;
+- represent immutable and staged gitlinks from raw mode/object metadata without reading or traversing submodules, and reject unstaged gitlinks that cannot be captured safely;
 - after snapshotting, apply normalization, snapshot containment, link-safe opening, and denied-component checks through the same capability-based contract before every surrounding-context or dependency read;
 - entity-encode prompt-frame tag literals inside all interpolated values;
 - parse the diff once into per-file blocks;
