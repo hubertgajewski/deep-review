@@ -135,6 +135,28 @@ Some clients provide an explicit mention or command syntax:
 
 Do not assume `/`, `$`, and `@` are interchangeable. For clients not listed above, use natural language or the discovery mechanism linked in the client table. T3 Code follows the invocation behavior of its active provider.
 
+For a numbered remote change, use the familiar reference style for the hosting provider:
+
+```text
+Use deep-review #123
+Use deep-review !123
+```
+
+`#123` is the familiar GitHub-style reference, while `!123` is GitLab merge-request notation. For backward compatibility, `#123` and bare `123` infer the provider from the trusted repository remote. `!123` explicitly selects GitLab and is equivalent to `--gitlab-mr 123`. These examples are AI-client invocations, not shell commands.
+
+Both reference styles work with client-specific invocation prefixes:
+
+```text
+/deep-review #123
+/deep-review !123
+$deep-review #123
+$deep-review !123
+@skills:deep-review #123
+@skills:deep-review !123
+@deep-review #123
+@deep-review !123
+```
+
 Scope selectors and modifiers are appended after the client-specific invocation token. For example:
 
 ```text

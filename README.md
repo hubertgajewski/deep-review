@@ -40,6 +40,28 @@ Invocation syntax depends on the client:
 
 If a client has no documented explicit syntax, name the skill in natural language or select it from the client's skills menu. The scope options below follow whichever invocation form the client supports.
 
+For a numbered remote change, use the familiar reference style for the hosting provider:
+
+```text
+Use deep-review #123
+Use deep-review !123
+```
+
+`#123` is the familiar GitHub-style reference, while `!123` is GitLab merge-request notation. For backward compatibility, `#123` and bare `123` still infer GitHub or GitLab from the trusted repository remote; `!123` selects GitLab explicitly. These are AI-client invocations, not shell commands.
+
+Both reference styles work with client-specific invocation prefixes:
+
+```text
+/deep-review #123
+/deep-review !123
+$deep-review #123
+$deep-review !123
+@skills:deep-review #123
+@skills:deep-review !123
+@deep-review #123
+@deep-review !123
+```
+
 Common scopes include:
 
 ```text
