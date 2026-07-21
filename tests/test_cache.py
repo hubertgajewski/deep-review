@@ -370,6 +370,35 @@ class ResultValidationTests(unittest.TestCase):
             CACHE.validate_hml(redacted), {"high": 4, "medium": 0, "low": 0}
         )
 
+    def test_sensitive_header_method_calls_are_redacted(self) -> None:
+        values = ("request-value", "response-value")
+        raw = (
+            "HIGH | credential-exposure | src/auth.js:40 | "
+            f'xhr.setRequestHeader("Authorization", "{values[0]}") | remove it\n'
+            "HIGH | credential-exposure | src/auth.java:41 | "
+            f'response.setHeader("Cookie", "{values[1]}") | remove it\n'
+            "summary: 2 high / 0 medium / 0 low\n"
+        )
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for value in values:
+            self.assertNotIn(value, redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 2)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 2, "medium": 0, "low": 0}
+        )
+
+    def test_literal_old_private_key_sentinel_text_is_preserved(self) -> None:
+        literal = "[INTERNAL PRIVATE KEY REDACTION]"
+        raw = (
+            f"LOW | configuration | src/{literal}.txt:12 | {literal} | preserve it\n"
+            "summary: 0 high / 0 medium / 1 low\n"
+        )
+
+        self.assertEqual(CACHE.redact_result_body(raw, "hml"), raw)
+
     def test_cookie_headers_redact_the_complete_value(self) -> None:
         session_value = "session-" + "value-123"
         csrf_value = "csrf-" + "value-456"

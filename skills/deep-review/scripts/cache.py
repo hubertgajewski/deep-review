@@ -37,7 +37,6 @@ CHECK_SUMMARY_RE = re.compile(r"^summary: (\d+) pass / (\d+) fail / (\d+) N/A$")
 CHECK_ITEM_RE = re.compile(r"^- \[(pass|fail|N/A)\] ([^:]+): (.+)$")
 CHECK_FAILURE_RE = re.compile(r"^([1-9]\d*)\. (.+):([1-9]\d*) (.+)$")
 REDACTION_MARKER = "[REDACTED CREDENTIAL]"
-PRIVATE_KEY_SENTINEL = "[INTERNAL PRIVATE KEY REDACTION]"
 PRIVATE_KEY_RE = re.compile(
     r"-----BEGIN (?P<label>(?:(?:RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY|"
     r"PGP PRIVATE KEY BLOCK)-----"
@@ -48,7 +47,7 @@ SENSITIVE_HEADER_RE = re.compile(
     r"((?:\b(?:authorization|(?:set-)?cookie)|"
     r"['\"](?:authorization|(?:set-)?cookie)['\"]|"
     r"\[\s*['\"](?:authorization|(?:set-)?cookie)['\"]\s*\])"
-    r"\s*[:=]\s*)[^\r\n]*",
+    r"\s*[:,=]\s*)[^\r\n]*",
     re.IGNORECASE,
 )
 NAMED_CREDENTIAL_RE = re.compile(
@@ -538,8 +537,7 @@ def credential_value_is_placeholder(value: str) -> bool:
 
 
 def redact_sensitive_text(text: str) -> str:
-    redacted = text.replace(PRIVATE_KEY_SENTINEL, REDACTION_MARKER)
-    redacted = PRIVATE_KEY_RE.sub(REDACTION_MARKER, redacted)
+    redacted = PRIVATE_KEY_RE.sub(REDACTION_MARKER, text)
     redacted = SENSITIVE_HEADER_RE.sub(
         lambda match: f"{match.group(1)}{REDACTION_MARKER}", redacted
     )
@@ -566,8 +564,10 @@ def redact_sensitive_text(text: str) -> str:
     return NAMED_CREDENTIAL_RE.sub(replace_named, redacted)
 
 
-def reject_sensitive_structural_field(value: str, label: str) -> None:
-    if PRIVATE_KEY_SENTINEL in value or redact_sensitive_text(value) != value:
+def reject_sensitive_structural_field(
+    value: str, label: str, private_key_sentinel: str
+) -> None:
+    if private_key_sentinel in value or redact_sensitive_text(value) != value:
         raise CacheError(f"{label} contains a recognized credential")
 
 
@@ -580,20 +580,33 @@ def map_result_lines(text: str, transform: Callable[[str], str]) -> str:
 
 
 def redact_result_body(text: str, schema: str) -> str:
-    without_private_keys = PRIVATE_KEY_RE.sub(PRIVATE_KEY_SENTINEL, text)
+    private_key_sentinel = "\0"
+    while private_key_sentinel in text:
+        private_key_sentinel += "\0"
+    without_private_keys = PRIVATE_KEY_RE.sub(private_key_sentinel, text)
+
+    def redact_field(value: str) -> str:
+        return redact_sensitive_text(
+            value.replace(private_key_sentinel, REDACTION_MARKER)
+        )
+
     if schema == "hml":
         def redact_hml_line(line: str) -> str:
             if line.count(" | ") != 4:
-                return redact_sensitive_text(line)
+                return redact_field(line)
             fields = line.split(" | ")
             if len(fields) != 5:
-                return redact_sensitive_text(line)
-            reject_sensitive_structural_field(fields[1], "H/M/L category")
+                return redact_field(line)
+            reject_sensitive_structural_field(
+                fields[1], "H/M/L category", private_key_sentinel
+            )
             location = re.fullmatch(r"(.+):([1-9]\d*)", fields[2])
             location_path = location.group(1) if location else fields[2]
-            reject_sensitive_structural_field(location_path, "H/M/L location")
-            fields[3] = redact_sensitive_text(fields[3])
-            fields[4] = redact_sensitive_text(fields[4])
+            reject_sensitive_structural_field(
+                location_path, "H/M/L location", private_key_sentinel
+            )
+            fields[3] = redact_field(fields[3])
+            fields[4] = redact_field(fields[4])
             return " | ".join(fields)
 
         return map_result_lines(without_private_keys, redact_hml_line)
@@ -601,19 +614,21 @@ def redact_result_body(text: str, schema: str) -> str:
         def redact_checklist_line(line: str) -> str:
             item = CHECK_ITEM_RE.fullmatch(line)
             if item:
-                reject_sensitive_structural_field(item.group(2), "checklist item name")
-                evidence = redact_sensitive_text(item.group(3))
+                reject_sensitive_structural_field(
+                    item.group(2), "checklist item name", private_key_sentinel
+                )
+                evidence = redact_field(item.group(3))
                 return f"- [{item.group(1)}] {item.group(2)}: {evidence}"
             action = CHECK_FAILURE_RE.fullmatch(line)
             if action:
                 reject_sensitive_structural_field(
-                    action.group(2), "checklist failure location"
+                    action.group(2), "checklist failure location", private_key_sentinel
                 )
                 return (
                     f"{action.group(1)}. {action.group(2)}:{action.group(3)} "
-                    f"{redact_sensitive_text(action.group(4))}"
+                    f"{redact_field(action.group(4))}"
                 )
-            return redact_sensitive_text(line)
+            return redact_field(line)
 
         return map_result_lines(without_private_keys, redact_checklist_line)
     raise CacheError("unsupported result schema")
