@@ -49,7 +49,7 @@ SENSITIVE_HEADER_RE = re.compile(
     r"\[\s*['\"](?:authorization|(?:set-)?cookie)['\"]\s*\]"
     r"\s*[:=]\s*|"
     r"\b(?:setRequestHeader|setHeader|addHeader|header|"
-    r"(?:[A-Za-z_]\w*\.)?Header(?:\(\))?\.(?:Set|Add))\s*\(\s*"
+    r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*|\(\))*\.(?:Set|Add))\s*\(\s*"
     r"['\"](?:authorization|(?:set-)?cookie)['\"]\s*,\s*))[^\r\n]*",
     re.IGNORECASE,
 )
@@ -539,19 +539,22 @@ def credential_value_is_placeholder(value: str) -> bool:
     return normalized.startswith("$") or set(normalized) <= {"*", "x", "-"}
 
 
-def header_value_is_placeholder(value: str, *, method_call: bool) -> bool:
-    candidate = value.strip().rstrip(";").rstrip()
-    if method_call:
-        while candidate.endswith(")"):
-            candidate = candidate[:-1].rstrip()
+def header_value_is_placeholder(value: str) -> bool:
+    candidate = value.lstrip()
+    if candidate[:1] in {"'", '"'}:
+        quote = candidate[0]
+        end = candidate.find(quote, 1)
+        if end < 0:
+            return False
+        following = candidate[end + 1 : end + 2]
+        if following and not following.isspace() and following not in ",;).!?":
+            return False
+        candidate = candidate[1:end]
     else:
-        candidate = candidate.rstrip(",").rstrip()
-    if (
-        len(candidate) >= 2
-        and candidate[0] == candidate[-1]
-        and candidate[0] in {"'", '"'}
-    ):
-        candidate = candidate[1:-1]
+        tokens = candidate.split(maxsplit=1)
+        if not tokens:
+            return True
+        candidate = tokens[0].rstrip(",;:.!?)")
     return credential_value_is_placeholder(candidate)
 
 
@@ -561,10 +564,7 @@ def redact_sensitive_text(text: str) -> str:
     def replace_sensitive_header(match: re.Match[str]) -> str:
         prefix = match.group(1)
         value = match.group(0)[len(prefix) :]
-        if header_value_is_placeholder(
-            value,
-            method_call=prefix.rstrip().endswith(","),
-        ):
+        if header_value_is_placeholder(value):
             return match.group(0)
         return f"{prefix}{REDACTION_MARKER}"
 
