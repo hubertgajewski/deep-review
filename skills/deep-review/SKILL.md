@@ -79,7 +79,7 @@ Before reading any trusted extension reference, validate its literal repository-
 
 ### 2. Resolve scope and preflight paths
 
-Follow [Scope resolution](references/scope-resolution.md). Resolve trusted identities, then perform the complete metadata-only path preflight before retrieving diff hunks, untracked contents, snapshots, or dependency content. Validate every changed path, untracked path, and rename/copy source and destination for traversal, repository containment, symlinks, and denied components. A denied path fails the whole scope; never reduce a mixed scope to an allowed subset.
+Follow [Scope resolution](references/scope-resolution.md). Resolve trusted identities, then perform the complete metadata-only path preflight before retrieving diff hunks, untracked contents, snapshots, or dependency content. Validate every changed path, untracked path, and rename/copy source and destination for traversal, repository containment, symlinks or reparse points, and denied components. A denied path fails the whole scope; never reduce a mixed scope to an allowed subset.
 
 Only after preflight succeeds, build exactly one normalized scope containing mode, provider metadata when remote, title, base branch, repository identity, trusted base, head identity, immutable context root, diff, changed-file manifest, untracked paths, description, focus, and `full_review`.
 
@@ -90,7 +90,7 @@ Print one mode line before dispatch. On failure, emit `Failed at scope resolutio
 Before any dispatch:
 
 - require the path manifest to be the accepted result of the metadata-only preflight;
-- capture local untracked and path-mode primary bodies before snapshotting through a platform secure-open adapter anchored to the repository root, rejecting symlink or reparse-point traversal and proving the retained preflight identity;
+- capture local unstaged tracked bodies, local untracked bodies, and path-mode primary bodies before snapshotting through a platform secure-open adapter anchored to the repository root, rejecting symlink or reparse-point traversal and proving the retained preflight identity; retain local staged content only by its exact index object identity;
 - after snapshotting, apply normalization, snapshot containment, link-safe opening, and denied-component checks through the same capability-based contract before every surrounding-context or dependency read;
 - entity-encode prompt-frame tag literals inside all interpolated values;
 - parse the diff once into per-file blocks;

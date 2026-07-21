@@ -197,11 +197,21 @@ class PackageTests(unittest.TestCase):
         self.assertIn("never reduce a mixed scope to an allowed subset", main)
 
         local_metadata = "git diff --name-status -z --find-renames --find-copies-harder HEAD"
-        local_content = "retrieve the tracked content diff"
+        local_unstaged_metadata = "git diff --name-status -z --find-renames --find-copies-harder\n"
+        local_content = "Derive the normalized local content diff"
         self.assertLess(scope.index(local_metadata), scope.index(local_content))
+        self.assertLess(scope.index(local_unstaged_metadata), scope.index(local_content))
         self.assertIn("git ls-files --others --exclude-standard -z", scope)
         self.assertIn("newly appearing denied path", scope)
-        self.assertIn("byte-for-byte", scope)
+        self.assertIn("exact stage modes and blob object IDs", scope)
+        self.assertIn("Reject a staged symlink mode", scope)
+        self.assertIn("never materializes a link-shaped intermediate state", scope)
+        self.assertIn("capture every accepted regular tracked path", scope)
+        self.assertIn("exact accepted index entries", scope)
+        self.assertIn("retained exact index object identities", scope)
+        self.assertIn("mutable local tracked, local untracked", scope)
+        self.assertIn("Never ask Git to produce local content hunks", scope)
+        self.assertIn("caller's mutable working tree", scope)
 
         path_enumeration = "enumerate entry names and link-aware file metadata"
         path_preflight = "Run the complete path preflight over every enumerated path"
@@ -214,7 +224,7 @@ class PackageTests(unittest.TestCase):
         self.assertLess(scope.index(primary_capture), scope.index(immutable_context))
         self.assertLess(scope.index(primary_capture), scope.index(path_binary_read, scope.index(primary_capture)))
         self.assertLess(scope.index(primary_capture), scope.index(path_synthetic_hunk, scope.index(primary_capture)))
-        self.assertIn("mutable primary inputs only", scope)
+        self.assertIn("accepted local tracked files with unstaged bodies", scope)
         self.assertIn("platform secure-open adapter", scope)
         self.assertIn("anchored to a repository-root capability", scope)
         self.assertIn("POSIX adapters", scope)
@@ -243,7 +253,10 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Treat the manifest as one atomic scope", scope)
         self.assertIn("before any candidate content reaches tool output or model context", scope)
         self.assertIn("before retrieving content diffs", scope)
-        self.assertIn("Only after the complete path preflight and content retrieval succeed", scope)
+        self.assertIn(
+            "Only after the complete path preflight and every mode-owned primary capture",
+            scope,
+        )
 
         provider_commands = {
             "github": (
@@ -297,7 +310,7 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(ordinary, "A\tcopy.txt\n")
             self.assertEqual(harder, "C100\tsource.txt\tcopy.txt\n")
 
-    def test_local_content_diff_uses_literal_pathspecs(self) -> None:
+    def test_local_path_handling_requires_literal_pathspecs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repository = Path(directory)
             subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
@@ -324,7 +337,7 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(interpreted, "")
             self.assertIn(f"a/{magic_name}", literal)
             scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
-            self.assertIn("git --literal-pathspecs diff", scope)
+            self.assertIn("Literal pathspec mode remains mandatory", scope)
 
     def test_language_rule_catalogs_are_complete_and_unique(self) -> None:
         expected = {
