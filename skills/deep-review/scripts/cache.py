@@ -44,8 +44,7 @@ PRIVATE_KEY_RE = re.compile(
     re.DOTALL,
 )
 AUTHORIZATION_RE = re.compile(
-    r"\b(authorization\s*[:=]\s*)(basic|bearer|token)\s+"
-    rf"({re.escape(REDACTION_MARKER)}|[^\s,;]+)",
+    r"\b(authorization\s*[:=]\s*)[^\r\n]*",
     re.IGNORECASE,
 )
 COOKIE_HEADER_RE = re.compile(r"\b((?:set-)?cookie\s*:\s*)[^\r\n]*", re.IGNORECASE)
@@ -538,7 +537,7 @@ def credential_value_is_placeholder(value: str) -> bool:
 def redact_sensitive_text(text: str) -> str:
     redacted = PRIVATE_KEY_RE.sub(REDACTION_MARKER, text)
     redacted = AUTHORIZATION_RE.sub(
-        lambda match: f"{match.group(1)}{match.group(2)} {REDACTION_MARKER}",
+        lambda match: f"{match.group(1)}{REDACTION_MARKER}",
         redacted,
     )
     redacted = COOKIE_HEADER_RE.sub(

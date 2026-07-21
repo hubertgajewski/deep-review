@@ -297,10 +297,13 @@ class ResultValidationTests(unittest.TestCase):
         access_key = "AKIA" + "B" * 16
         raw = (
             "HIGH | credential-exposure | src/auth.py:12 | "
-            f"Authorization: Bearer {provider_token}, api_key='{access_key}', "
-            f"password=hunter2, token={gitlab_token}, Cookie: session=abcdef123456 | "
+            f"api_key='{access_key}', password=hunter2, token={gitlab_token} | "
             "rotate the credentials\n"
-            "summary: 1 high / 0 medium / 0 low\n"
+            "HIGH | credential-exposure | src/auth.py:13 | "
+            f"Authorization: Bearer {provider_token} | rotate the credential\n"
+            "HIGH | credential-exposure | src/auth.py:14 | "
+            "Cookie: session=abcdef123456 | rotate the credential\n"
+            "summary: 3 high / 0 medium / 0 low\n"
         )
         redacted = CACHE.redact_result_body(raw, "hml")
 
@@ -315,7 +318,33 @@ class ResultValidationTests(unittest.TestCase):
         ))
         self.assertIn(" | rotate the credentials\n", redacted)
         self.assertEqual(
-            CACHE.validate_hml(redacted), {"high": 1, "medium": 0, "low": 0}
+            CACHE.validate_hml(redacted), {"high": 3, "medium": 0, "low": 0}
+        )
+
+    def test_authorization_headers_redact_every_scheme_and_value(self) -> None:
+        values = (
+            'Digest username="reviewer", response="opaque-value"',
+            "Negotiate opaque-value",
+            "ApiKey opaque-value",
+            "AWS4-HMAC-SHA256 Credential=opaque-value, Signature=opaque-signature",
+            "opaque-value-without-a-scheme",
+        )
+        raw = "".join(
+            f"HIGH | credential-exposure | src/auth.py:{line} | "
+            f"Authorization: {value} | remove the header\n"
+            for line, value in enumerate(values, 20)
+        ) + "summary: 5 high / 0 medium / 0 low\n"
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for value in values:
+            self.assertNotIn(value, redacted)
+        self.assertEqual(
+            redacted.count(f"Authorization: {CACHE.REDACTION_MARKER}"), 5
+        )
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 5, "medium": 0, "low": 0}
         )
 
     def test_cookie_headers_redact_the_complete_value(self) -> None:
