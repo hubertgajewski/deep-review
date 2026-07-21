@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from contextlib import contextmanager
 import hashlib
 import json
@@ -35,6 +36,71 @@ HML_SUMMARY_RE = re.compile(r"^summary: (\d+) high / (\d+) medium / (\d+) low$")
 CHECK_SUMMARY_RE = re.compile(r"^summary: (\d+) pass / (\d+) fail / (\d+) N/A$")
 CHECK_ITEM_RE = re.compile(r"^- \[(pass|fail|N/A)\] ([^:]+): (.+)$")
 CHECK_FAILURE_RE = re.compile(r"^([1-9]\d*)\. (.+):([1-9]\d*) (.+)$")
+PRIVATE_KEY_RE = re.compile(
+    r"-----BEGIN (?P<label>(?:(?:RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY|"
+    r"PGP PRIVATE KEY BLOCK)-----"
+    r".*?-----END (?P=label)-----",
+    re.DOTALL,
+)
+AUTHORIZATION_RE = re.compile(
+    r"\b(authorization\s*[:=]\s*)(basic|bearer|token)\s+([^\s,;]+)",
+    re.IGNORECASE,
+)
+COOKIE_HEADER_RE = re.compile(r"\b((?:set-)?cookie\s*:\s*)([^\s,]+)", re.IGNORECASE)
+NAMED_CREDENTIAL_RE = re.compile(
+    r"\b(?P<name>api[_ -]?key|access[_ -]?key|private[_ -]?key|"
+    r"access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|"
+    r"password|passwd|pwd|token|secret|cookie)\b"
+    r"(?P<separator>\s*[:=]\s*)"
+    r"(?:(?P<quote>['\"])(?P<quoted>[^'\"\r\n]+)(?P=quote)|"
+    r"(?P<bare>[^\s,;]+))",
+    re.IGNORECASE,
+)
+WELL_KNOWN_CREDENTIAL_RES = (
+    re.compile(
+        r"\b(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255}|"
+        r"glpat-[A-Za-z0-9_-]{20,255})\b"
+    ),
+    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
+    re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b"),
+    re.compile(
+        r"\beyJ[A-Za-z0-9_-]{6,}\.eyJ[A-Za-z0-9_-]{6,}\."
+        r"[A-Za-z0-9_-]{6,}\b"
+    ),
+)
+SAFE_CREDENTIAL_VALUES = {
+    "accepted",
+    "configured",
+    "dummy",
+    "empty",
+    "example",
+    "exposed",
+    "fake",
+    "hardcoded",
+    "hidden",
+    "invalid",
+    "leaked",
+    "logged",
+    "masked",
+    "missing",
+    "nil",
+    "none",
+    "null",
+    "omitted",
+    "placeholder",
+    "present",
+    "redacted",
+    "rejected",
+    "required",
+    "rotated",
+    "test",
+    "unknown",
+    "unset",
+    "unsafe",
+    "valid",
+}
+REDACTION_MARKER = "[REDACTED CREDENTIAL]"
 MAX_SCOPE_STATES = 64
 RESULT_MAX_UTF8_BYTES = 12_000
 CACHE_RECORD_MAX_UTF8_BYTES = 524_288
@@ -100,6 +166,19 @@ def read_bounded_text(
         return data.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise CacheError(f"cannot read UTF-8 {label} from {path}: {exc}") from exc
+
+
+def read_bounded_stdin(max_utf8_bytes: int, label: str) -> str:
+    try:
+        data = sys.stdin.buffer.read(max_utf8_bytes + 1)
+    except OSError as exc:
+        raise CacheError(f"cannot read {label} from standard input: {exc}") from exc
+    if len(data) > max_utf8_bytes:
+        raise CacheError(f"{label} exceeds the {max_utf8_bytes}-byte limit")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise CacheError(f"cannot read UTF-8 {label} from standard input: {exc}") from exc
 
 
 def read_json(path: Path, *, missing_ok: bool = False) -> Any:
@@ -441,6 +520,86 @@ def validate_key_manifest(value: Any) -> dict[str, Any]:
     return value
 
 
+def credential_value_is_placeholder(value: str) -> bool:
+    normalized = value.strip().casefold()
+    if normalized in SAFE_CREDENTIAL_VALUES or not normalized:
+        return True
+    if normalized == REDACTION_MARKER.casefold():
+        return True
+    if normalized.startswith("${") and normalized.endswith("}"):
+        return True
+    if normalized.startswith("<") and normalized.endswith(">"):
+        return True
+    if normalized.startswith("[") and normalized.endswith("]"):
+        return True
+    return normalized.startswith("$") or set(normalized) <= {"*", "x", "-"}
+
+
+def redact_sensitive_text(text: str) -> str:
+    redacted = PRIVATE_KEY_RE.sub(REDACTION_MARKER, text)
+    redacted = AUTHORIZATION_RE.sub(
+        lambda match: f"{match.group(1)}{match.group(2)} {REDACTION_MARKER}",
+        redacted,
+    )
+    redacted = COOKIE_HEADER_RE.sub(
+        lambda match: f"{match.group(1)}{REDACTION_MARKER}", redacted
+    )
+    for pattern in WELL_KNOWN_CREDENTIAL_RES:
+        redacted = pattern.sub(REDACTION_MARKER, redacted)
+
+    def replace_named(match: re.Match[str]) -> str:
+        value = match.group("quoted") or match.group("bare") or ""
+        if credential_value_is_placeholder(value):
+            return match.group(0)
+        quote = match.group("quote") or ""
+        return (
+            f"{match.group('name')}{match.group('separator')}"
+            f"{quote}{REDACTION_MARKER}{quote}"
+        )
+
+    return NAMED_CREDENTIAL_RE.sub(replace_named, redacted)
+
+
+def map_result_lines(text: str, transform: Callable[[str], str]) -> str:
+    transformed: list[str] = []
+    for raw_line in text.splitlines(keepends=True):
+        content = raw_line.rstrip("\r\n")
+        transformed.append(transform(content) + raw_line[len(content) :])
+    return "".join(transformed)
+
+
+def redact_result_body(text: str, schema: str) -> str:
+    without_private_keys = PRIVATE_KEY_RE.sub(REDACTION_MARKER, text)
+    if schema == "hml":
+        def redact_hml_line(line: str) -> str:
+            if line.count(" | ") != 4:
+                return redact_sensitive_text(line)
+            fields = line.split(" | ")
+            if len(fields) != 5:
+                return redact_sensitive_text(line)
+            fields[3] = redact_sensitive_text(fields[3])
+            fields[4] = redact_sensitive_text(fields[4])
+            return " | ".join(fields)
+
+        return map_result_lines(without_private_keys, redact_hml_line)
+    if schema == "checklist":
+        def redact_checklist_line(line: str) -> str:
+            item = CHECK_ITEM_RE.fullmatch(line)
+            if item:
+                evidence = redact_sensitive_text(item.group(3))
+                return f"- [{item.group(1)}] {item.group(2)}: {evidence}"
+            action = CHECK_FAILURE_RE.fullmatch(line)
+            if action:
+                return (
+                    f"{action.group(1)}. {action.group(2)}:{action.group(3)} "
+                    f"{redact_sensitive_text(action.group(4))}"
+                )
+            return redact_sensitive_text(line)
+
+        return map_result_lines(without_private_keys, redact_checklist_line)
+    raise CacheError("unsupported result schema")
+
+
 def validate_hml(text: str, allowed_categories: set[str] | None = None) -> dict[str, int]:
     lines = [line.rstrip() for line in text.strip().splitlines() if line.strip()]
     summaries = [(index, HML_SUMMARY_RE.fullmatch(line)) for index, line in enumerate(lines)]
@@ -460,14 +619,14 @@ def validate_hml(text: str, allowed_categories: set[str] | None = None) -> dict[
     else:
         for line in body:
             if line.count(" | ") != 4:
-                raise CacheError(f"invalid H/M/L field separators: {line}")
+                raise CacheError("invalid H/M/L field separators")
             fields = line.split(" | ")
             if len(fields) != 5 or fields[0] not in {"HIGH", "MEDIUM", "LOW"}:
-                raise CacheError(f"invalid H/M/L finding line: {line}")
+                raise CacheError("invalid H/M/L finding line")
             if not fields[1] or not fields[2] or not fields[3] or not fields[4]:
                 raise CacheError("H/M/L finding fields cannot be empty")
             if allowed_categories is not None and fields[1] not in allowed_categories:
-                raise CacheError(f"H/M/L category is not enabled for this agent: {fields[1]}")
+                raise CacheError("H/M/L category is not enabled for this agent")
             if any(re.search(r"(?<!\\)\|", field) for field in fields):
                 raise CacheError("literal pipes in H/M/L fields must be escaped as \\|")
             location = re.fullmatch(r"(.+):([1-9]\d*)", fields[2])
@@ -495,7 +654,7 @@ def validate_checklist(text: str) -> dict[str, int]:
     for line in lines[:summary_index]:
         match = CHECK_ITEM_RE.fullmatch(line)
         if not match:
-            raise CacheError(f"invalid checklist line: {line}")
+            raise CacheError("invalid checklist line")
         counts[match.group(1)] += 1
     expected = tuple(int(summary_match.group(index)) for index in range(1, 4))
     actual = (counts["pass"], counts["fail"], counts["N/A"])
@@ -519,7 +678,9 @@ def validate_checklist(text: str) -> dict[str, int]:
     return counts
 
 
-def validate_result_object(result: Any, schema: str) -> dict[str, int]:
+def sanitize_result_object(
+    result: Any, schema: str
+) -> tuple[dict[str, Any], dict[str, int]]:
     if not isinstance(result, dict) or set(result) != {"body", "summary"}:
         raise CacheError("result JSON must contain only body and summary")
     if not isinstance(result["body"], str) or not isinstance(result["summary"], dict):
@@ -530,9 +691,15 @@ def validate_result_object(result: Any, schema: str) -> dict[str, int]:
         raise CacheError("result body must contain valid Unicode scalar values") from exc
     if body_size > RESULT_MAX_UTF8_BYTES:
         raise CacheError(f"result body exceeds the {RESULT_MAX_UTF8_BYTES}-byte limit")
-    counts = validate_hml(result["body"]) if schema == "hml" else validate_checklist(result["body"])
+    body = redact_result_body(result["body"], schema)
+    counts = validate_hml(body) if schema == "hml" else validate_checklist(body)
     if result["summary"] != counts:
         raise CacheError("result summary object does not match validated body counts")
+    return {"body": body, "summary": dict(result["summary"])}, counts
+
+
+def validate_result_object(result: Any, schema: str) -> dict[str, int]:
+    _, counts = sanitize_result_object(result, schema)
     return counts
 
 
@@ -549,24 +716,46 @@ def command_key(args: argparse.Namespace) -> None:
     print(sha256_bytes(canonical_bytes(manifest)))
 
 
+def validate_allowed_categories(schema: str, categories: Any) -> set[str] | None:
+    allowed_categories = None
+    if categories:
+        if schema != "hml":
+            raise CacheError("allowed categories apply only to H/M/L results")
+        if len(categories) != len(set(categories)):
+            raise CacheError("allowed categories cannot contain duplicates")
+        for category in categories:
+            if not RULE_ID_RE.fullmatch(category):
+                raise CacheError("invalid namespaced rule category")
+        allowed_categories = set(categories)
+    return allowed_categories
+
+
 def command_validate_result(args: argparse.Namespace) -> None:
     text = read_bounded_text(Path(args.file), RESULT_MAX_UTF8_BYTES, "result")
-    allowed_categories = None
-    if args.allowed_category:
-        if args.schema != "hml":
-            raise CacheError("allowed categories apply only to H/M/L results")
-        if len(args.allowed_category) != len(set(args.allowed_category)):
-            raise CacheError("allowed categories cannot contain duplicates")
-        for category in args.allowed_category:
-            if not RULE_ID_RE.fullmatch(category):
-                raise CacheError(f"invalid namespaced rule category: {category}")
-        allowed_categories = set(args.allowed_category)
+    allowed_categories = validate_allowed_categories(args.schema, args.allowed_category)
+    body = redact_result_body(text, args.schema)
     counts = (
-        validate_hml(text, allowed_categories=allowed_categories)
+        validate_hml(body, allowed_categories=allowed_categories)
         if args.schema == "hml"
-        else validate_checklist(text)
+        else validate_checklist(body)
     )
     print(json.dumps({"schema": args.schema, "counts": counts}, sort_keys=True))
+
+
+def command_process_result(args: argparse.Namespace) -> None:
+    text = read_bounded_stdin(RESULT_MAX_UTF8_BYTES, "result")
+    allowed_categories = validate_allowed_categories(args.schema, args.allowed_category)
+    body = redact_result_body(text, args.schema)
+    counts = (
+        validate_hml(body, allowed_categories=allowed_categories)
+        if args.schema == "hml"
+        else validate_checklist(body)
+    )
+    print(
+        json.dumps(
+            {"body": body, "summary": counts}, ensure_ascii=False, sort_keys=True
+        )
+    )
 
 
 def command_store(args: argparse.Namespace) -> None:
@@ -578,8 +767,7 @@ def command_store(args: argparse.Namespace) -> None:
         or not 1 <= args.iteration <= MAX_ITERATIONS
     ):
         raise CacheError(f"iteration must be between 1 and {MAX_ITERATIONS}")
-    result = read_json(Path(args.result))
-    counts = validate_result_object(result, args.schema)
+    result, counts = sanitize_result_object(read_json(Path(args.result)), args.schema)
     manifest = validate_key_manifest(read_json(Path(args.manifest)))
     if manifest["agent"] != args.agent:
         raise CacheError("record agent does not match key manifest agent")
@@ -635,7 +823,7 @@ def validate_cached_record(record: Any, expected_agent: str) -> dict[str, Any]:
     manifest = validate_key_manifest(record["manifest"])
     if manifest["agent"] != expected_agent or sha256_bytes(canonical_bytes(manifest)) != record["key"]:
         raise CacheError("cached key manifest does not match record identity")
-    counts = validate_result_object(record["result"], record["schema"])
+    result, counts = sanitize_result_object(record["result"], record["schema"])
     expected_classification = classify_result(
         record["schema"],
         counts,
@@ -648,7 +836,9 @@ def validate_cached_record(record: Any, expected_agent: str) -> dict[str, Any]:
         )
     if not isinstance(record["stored_at"], str) or not record["stored_at"]:
         raise CacheError("cached agent record has invalid timestamp")
-    return record
+    sanitized_record = dict(record)
+    sanitized_record["result"] = result
+    return sanitized_record
 
 
 def read_agent_record(args: argparse.Namespace) -> dict[str, Any]:
@@ -875,6 +1065,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="permitted namespaced language-rule category; repeat for every enabled rule",
     )
     result_parser.set_defaults(handler=command_validate_result)
+
+    process_parser = subparsers.add_parser(
+        "process-result",
+        help="redact and validate an agent result received through standard input",
+    )
+    process_parser.add_argument("--schema", choices=("hml", "checklist"), required=True)
+    process_parser.add_argument(
+        "--allowed-category",
+        action="append",
+        help="permitted namespaced language-rule category; repeat for every enabled rule",
+    )
+    process_parser.set_defaults(handler=command_process_result)
 
     for name, handler in (("store", command_store), ("lookup", command_lookup), ("probe", command_probe)):
         subparser = subparsers.add_parser(name)

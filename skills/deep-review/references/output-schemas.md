@@ -53,6 +53,14 @@ to use its schema-native value `fail`. Normalize and combine policies before dis
 according to the configuration contract, then classify the validated counts with that
 same effective policy. Recount the body and action list; drift is malformed output.
 
+## Credential redaction
+
+The shared credential rule applies to both schemas and to every built-in and consumer extension result. Immediately after bounded private result capture, replace recognized complete credential values in evidence and remediation text with exactly `[REDACTED CREDENTIAL]`. Preserve H/M/L severity, category, location, field delimiters, recommended-fix field, checklist state, item identity, failure location, ordering, and summary counts, then validate and recount the redacted body. Redaction is deterministic and idempotent.
+
+Recognition is deliberately conservative: private-key blocks, authorization and cookie header values, exact credential-name assignments, and package-defined common token formats. Placeholder and configuration-shape text such as `${API_TOKEN}`, `<secret>`, `[REDACTED]`, `token_count`, and `password_policy` remains unchanged. This boundary reduces additional secret copies; it is not a repository secret scanner and does not claim to recognize every credential.
+
+Only the redacted body may be deduplicated, merged, aggregated, printed, written to a temporary file, included in an error, or persisted. Validation diagnostics must describe the violated rule without quoting result text. If the deterministic redaction boundary is unavailable, suppress the raw body, mark that result `UNAVAILABLE`, and prevent readiness.
+
 ## Non-result states
 
 The orchestrator, not agents, emits:

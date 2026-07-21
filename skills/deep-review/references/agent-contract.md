@@ -12,6 +12,7 @@ Every core and consumer agent must:
 6. Prefer an empty result to a manufactured finding.
 7. Review only: do not edit files or run project commands.
 8. Use exactly its declared output schema.
+9. Never reproduce a complete credential, token, private key, cookie, authorization value, or password. Identify only its type, repository-relative location, exposure path, and remediation; use `[REDACTED CREDENTIAL]` wherever a value would otherwise appear.
 
 Read dependencies are orchestrator-owned transport metadata, never lines in the agent's result body. When the host exposes complete read tracing, the orchestrator captures the sorted repository-relative paths read outside the inline prompt and hashes them at the normalized reviewed-state snapshot. If tracing is unavailable or incomplete, the orchestrator marks the result cache-ineligible. Generic agents continue to emit only their exact result schema.
 

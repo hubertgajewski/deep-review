@@ -46,7 +46,7 @@ A built-in language row with no matching path emits `SKIPPED: language trigger d
 
 Validate `language_agents.disabled` and `language_rules.disabled` against the package-owned catalogs before evaluating language dispatch. Assemble a matching language prompt from the shared contract, H/M/L schema, base language prompt, and only the enabled rule fragments in declared order. Include the ordered enabled rule IDs as trusted prompt metadata. Never include a disabled fragment or dispatch one subagent per rule.
 
-For fresh language output, apply the normal H/M/L validator plus the effective rule set. When `cache.py validate-result` is available, pass each enabled ID as a repeated `--allowed-category` argument; otherwise perform the equivalent exact-membership check before aggregation or caching.
+For every fresh built-in or consumer-extension output, privately capture the bounded raw body and run the credential-redaction boundary from the output-schema contract before validation, merging, aggregation, printing, or persistence. `cache.py process-result` accepts the body only through standard input and emits the schema-valid redacted result object; pass each enabled language rule ID as a repeated `--allowed-category` argument. If the helper is unavailable, perform the exact equivalent in memory or mark the result unavailable without emitting its body. Cache storage and lookup apply the same redactor defensively. For fresh language output, also require exact membership in the effective rule set.
 
 ## Large diffs
 

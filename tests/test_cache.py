@@ -282,6 +282,133 @@ class ResultValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(CACHE.CacheError, "not enabled"):
             CACHE.validate_hml(finding, {"typescript.unsafe-type-assertion"})
 
+    def test_hml_redaction_covers_common_credentials_without_changing_schema_fields(self) -> None:
+        provider_token = "gh" + "p_" + "A" * 36
+        gitlab_token = "glpat-" + "G" * 20
+        access_key = "AKIA" + "B" * 16
+        raw = (
+            "HIGH | credential-exposure | src/auth.py:12 | "
+            f"Authorization: Bearer {provider_token}, api_key='{access_key}', "
+            f"password=hunter2, token={gitlab_token}, Cookie: session=abcdef123456 | "
+            "rotate the credentials\n"
+            "summary: 1 high / 0 medium / 0 low\n"
+        )
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        self.assertNotIn(provider_token, redacted)
+        self.assertNotIn(gitlab_token, redacted)
+        self.assertNotIn(access_key, redacted)
+        self.assertNotIn("hunter2", redacted)
+        self.assertNotIn("abcdef123456", redacted)
+        self.assertGreaterEqual(redacted.count(CACHE.REDACTION_MARKER), 5)
+        self.assertTrue(redacted.startswith(
+            "HIGH | credential-exposure | src/auth.py:12 | "
+        ))
+        self.assertIn(" | rotate the credentials\n", redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 1, "medium": 0, "low": 0}
+        )
+
+    def test_private_key_redaction_restores_a_valid_single_line_finding(self) -> None:
+        key_body = "-----BEGIN PRIVATE KEY-----\nQUJDREVGRw==\n-----END PRIVATE KEY-----"
+        raw = (
+            "HIGH | credential-exposure | src/key.py:3 | committed key "
+            f"{key_body} | remove and rotate it\n"
+            "summary: 1 high / 0 medium / 0 low\n"
+        )
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        self.assertNotIn("QUJDREVGRw==", redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 1)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 1, "medium": 0, "low": 0}
+        )
+
+    def test_checklist_redaction_preserves_item_and_failure_locations(self) -> None:
+        raw = (
+            "- [fail] secrets: password='correct horse battery staple' is committed\n"
+            "summary: 0 pass / 1 fail / 0 N/A\n"
+            "Failures (in order of priority):\n"
+            "1. token:12 replace api_key=abcdef123456 with an environment lookup\n"
+        )
+        redacted = CACHE.redact_result_body(raw, "checklist")
+
+        self.assertIn("- [fail] secrets:", redacted)
+        self.assertIn("1. token:12 replace", redacted)
+        self.assertNotIn("correct horse battery staple", redacted)
+        self.assertNotIn("abcdef123456", redacted)
+        self.assertEqual(
+            CACHE.validate_checklist(redacted), {"pass": 0, "fail": 1, "N/A": 0}
+        )
+
+    def test_redaction_is_idempotent_and_preserves_false_positive_shaped_values(self) -> None:
+        raw = (
+            "LOW | configuration | src/token:12 | token_count=4, password_policy=strict, "
+            "token=${API_TOKEN}, secret=<secret>, api_key=[REDACTED], password: hardcoded, "
+            "token: exposed | keep placeholders\n"
+            "summary: 0 high / 0 medium / 1 low\n"
+        )
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        self.assertEqual(redacted, raw)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+
+    def test_process_result_reads_stdin_and_never_echoes_raw_credentials(self) -> None:
+        provider_token = "gh" + "p_" + "C" * 36
+        valid = (
+            "HIGH | credential-exposure | src/auth.py:9 | "
+            f"token={provider_token} is logged | remove the log\n"
+            "summary: 1 high / 0 medium / 0 low\n"
+        )
+        completed = subprocess.run(
+            [sys.executable, str(CACHE_PATH), "process-result", "--schema", "hml"],
+            input=valid,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0)
+        processed = json.loads(completed.stdout)
+        self.assertNotIn(provider_token, completed.stdout)
+        self.assertIn(CACHE.REDACTION_MARKER, processed["body"])
+        self.assertEqual(processed["summary"], {"high": 1, "medium": 0, "low": 0})
+
+        malformed = f"malformed password={provider_token}\nsummary: 0 high / 0 medium / 0 low\n"
+        failed = subprocess.run(
+            [sys.executable, str(CACHE_PATH), "process-result", "--schema", "hml"],
+            input=malformed,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(failed.returncode, 2)
+        self.assertNotIn(provider_token, failed.stderr)
+        self.assertNotIn("malformed password", failed.stderr)
+        self.assertNotIn("Traceback", failed.stderr)
+
+    def test_process_result_rejects_invalid_or_oversized_stdin_without_traceback(self) -> None:
+        for payload, expected in (
+            (b"\xff\xfe", b"cannot read UTF-8 result from standard input"),
+            (b"x" * (CACHE.RESULT_MAX_UTF8_BYTES + 1), b"result exceeds"),
+        ):
+            with self.subTest(expected=expected):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(CACHE_PATH),
+                        "process-result",
+                        "--schema",
+                        "hml",
+                    ],
+                    input=payload,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual(completed.stdout, b"")
+                self.assertIn(expected, completed.stderr)
+                self.assertNotIn(b"Traceback", completed.stderr)
+
     def test_validate_result_command_rejects_invalid_allowed_categories(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result = Path(directory) / "result.txt"
@@ -400,6 +527,47 @@ class CacheStorageTests(unittest.TestCase):
 
         self.assertEqual(opened_modes, ["wb"])
         self.assertEqual(path.read_bytes(), expected)
+
+    def test_store_redacts_result_before_stdout_and_persistence(self) -> None:
+        provider_token = "gh" + "p_" + "D" * 36
+        result_path = self.root / "result.json"
+        manifest_path = self.root / "manifest.json"
+        key_manifest = manifest()
+        manifest_path.write_text(json.dumps(key_manifest), encoding="utf-8")
+        key = CACHE.sha256_bytes(CACHE.canonical_bytes(key_manifest))
+        result_path.write_text(
+            json.dumps(
+                {
+                    "body": (
+                        "HIGH | credential-exposure | src/auth.py:4 | "
+                        f"password={provider_token} is exposed | rotate it\n"
+                        "summary: 1 high / 0 medium / 0 low\n"
+                    ),
+                    "summary": {"high": 1, "medium": 0, "low": 0},
+                }
+            ),
+            encoding="utf-8",
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            CACHE.command_store(
+                argparse.Namespace(
+                    repo_root=str(self.root),
+                    cache_dir=".deep-review-cache",
+                    agent="code",
+                    key=key,
+                    iteration=1,
+                    schema="hml",
+                    manifest=str(manifest_path),
+                    result=str(result_path),
+                )
+            )
+
+        record_path = self.cache_dir / "agents" / "code.json"
+        self.assertNotIn(provider_token, output.getvalue())
+        self.assertNotIn(provider_token.encode("utf-8"), record_path.read_bytes())
+        self.assertIn(CACHE.REDACTION_MARKER, output.getvalue())
+        self.assertIn(CACHE.REDACTION_MARKER.encode("utf-8"), record_path.read_bytes())
 
     def test_cache_reads_and_writes_reject_oversized_records(self) -> None:
         read_path = self.cache_dir / "oversized-read.json"

@@ -365,6 +365,38 @@ class PackageTests(unittest.TestCase):
         self.assertIn("orchestrator-owned transport metadata", contract)
         self.assertIn("duplicates another extension domain", contract)
 
+    def test_credential_redaction_contract_is_package_wide(self) -> None:
+        skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        contract = (SKILL / "references" / "agent-contract.md").read_text(encoding="utf-8")
+        security = (SKILL / "references" / "agents" / "security.md").read_text(
+            encoding="utf-8"
+        )
+        output = (SKILL / "references" / "output-schemas.md").read_text(
+            encoding="utf-8"
+        )
+        budgets = (SKILL / "references" / "prompt-budgets.md").read_text(
+            encoding="utf-8"
+        )
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(
+            encoding="utf-8"
+        )
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+        cache_script = (SKILL / "scripts" / "cache.py").read_text(encoding="utf-8")
+
+        self.assertIn("Never reproduce a complete credential", contract)
+        self.assertIn("Never quote or partially reproduce", security)
+        self.assertIn("every built-in and consumer extension result", output)
+        self.assertIn("Only the redacted body", output)
+        self.assertIn(
+            "without a command argument, log entry, diagnostic, or temporary file",
+            budgets,
+        )
+        self.assertIn("process-result", skill)
+        self.assertIn("consumer-extension output", orchestration)
+        self.assertIn("not a general-purpose secret scanner", user_config)
+        self.assertIn("Do not restore it from an untrusted CI artifact", user_config)
+        self.assertIn('"process-result"', cache_script)
+
     def test_effective_blocking_policy_is_consistent_across_contracts(self) -> None:
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
         contract = (SKILL / "references" / "agent-contract.md").read_text(encoding="utf-8")
