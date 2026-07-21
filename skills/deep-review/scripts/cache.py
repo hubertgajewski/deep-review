@@ -48,7 +48,8 @@ SENSITIVE_HEADER_RE = re.compile(
     r"['\"](?:authorization|(?:set-)?cookie)['\"]\s*[:=]\s*|"
     r"\[\s*['\"](?:authorization|(?:set-)?cookie)['\"]\s*\]"
     r"\s*[:=]\s*|"
-    r"\b(?:setRequestHeader|setHeader|addHeader|header)\s*\(\s*"
+    r"\b(?:setRequestHeader|setHeader|addHeader|header|"
+    r"(?:[A-Za-z_]\w*\.)?Header(?:\(\))?\.(?:Set|Add))\s*\(\s*"
     r"['\"](?:authorization|(?:set-)?cookie)['\"]\s*,\s*))[^\r\n]*",
     re.IGNORECASE,
 )
@@ -538,11 +539,36 @@ def credential_value_is_placeholder(value: str) -> bool:
     return normalized.startswith("$") or set(normalized) <= {"*", "x", "-"}
 
 
+def header_value_is_placeholder(value: str, *, method_call: bool) -> bool:
+    candidate = value.strip().rstrip(";").rstrip()
+    if method_call:
+        while candidate.endswith(")"):
+            candidate = candidate[:-1].rstrip()
+    else:
+        candidate = candidate.rstrip(",").rstrip()
+    if (
+        len(candidate) >= 2
+        and candidate[0] == candidate[-1]
+        and candidate[0] in {"'", '"'}
+    ):
+        candidate = candidate[1:-1]
+    return credential_value_is_placeholder(candidate)
+
+
 def redact_sensitive_text(text: str) -> str:
     redacted = PRIVATE_KEY_RE.sub(REDACTION_MARKER, text)
-    redacted = SENSITIVE_HEADER_RE.sub(
-        lambda match: f"{match.group(1)}{REDACTION_MARKER}", redacted
-    )
+
+    def replace_sensitive_header(match: re.Match[str]) -> str:
+        prefix = match.group(1)
+        value = match.group(0)[len(prefix) :]
+        if header_value_is_placeholder(
+            value,
+            method_call=prefix.rstrip().endswith(","),
+        ):
+            return match.group(0)
+        return f"{prefix}{REDACTION_MARKER}"
+
+    redacted = SENSITIVE_HEADER_RE.sub(replace_sensitive_header, redacted)
     for pattern in WELL_KNOWN_CREDENTIAL_RES:
         redacted = pattern.sub(REDACTION_MARKER, redacted)
 
@@ -721,10 +747,7 @@ def sanitize_result_object(
         raise CacheError("result JSON must contain only body and summary")
     if not isinstance(result["body"], str) or not isinstance(result["summary"], dict):
         raise CacheError("result body must be text and summary must be an object")
-    require_bounded_result_body(result["body"], "result body")
-    body = redact_result_body(result["body"], schema)
-    require_bounded_result_body(body, "redacted result body")
-    counts = validate_hml(body) if schema == "hml" else validate_checklist(body)
+    body, counts = process_result_body(result["body"], schema)
     if result["summary"] != counts:
         raise CacheError("result summary object does not match validated body counts")
     return {"body": body, "summary": dict(result["summary"])}, counts
@@ -742,6 +765,22 @@ def require_bounded_result_body(body: str, label: str) -> None:
         raise CacheError(f"{label} must contain valid Unicode scalar values") from exc
     if body_size > RESULT_MAX_UTF8_BYTES:
         raise CacheError(f"{label} exceeds the {RESULT_MAX_UTF8_BYTES}-byte limit")
+
+
+def process_result_body(
+    text: str,
+    schema: str,
+    allowed_categories: set[str] | None = None,
+) -> tuple[str, dict[str, int]]:
+    require_bounded_result_body(text, "result body")
+    body = redact_result_body(text, schema)
+    require_bounded_result_body(body, "redacted result body")
+    counts = (
+        validate_hml(body, allowed_categories=allowed_categories)
+        if schema == "hml"
+        else validate_checklist(body)
+    )
+    return body, counts
 
 
 def command_hash(args: argparse.Namespace) -> None:
@@ -774,12 +813,10 @@ def validate_allowed_categories(schema: str, categories: Any) -> set[str] | None
 def command_validate_result(args: argparse.Namespace) -> None:
     text = read_bounded_text(Path(args.file), RESULT_MAX_UTF8_BYTES, "result")
     allowed_categories = validate_allowed_categories(args.schema, args.allowed_category)
-    body = redact_result_body(text, args.schema)
-    require_bounded_result_body(body, "redacted result body")
-    counts = (
-        validate_hml(body, allowed_categories=allowed_categories)
-        if args.schema == "hml"
-        else validate_checklist(body)
+    _, counts = process_result_body(
+        text,
+        args.schema,
+        allowed_categories=allowed_categories,
     )
     print(json.dumps({"schema": args.schema, "counts": counts}, sort_keys=True))
 
@@ -787,12 +824,10 @@ def command_validate_result(args: argparse.Namespace) -> None:
 def command_process_result(args: argparse.Namespace) -> None:
     text = read_bounded_stdin(RESULT_MAX_UTF8_BYTES, "result")
     allowed_categories = validate_allowed_categories(args.schema, args.allowed_category)
-    body = redact_result_body(text, args.schema)
-    require_bounded_result_body(body, "redacted result body")
-    counts = (
-        validate_hml(body, allowed_categories=allowed_categories)
-        if args.schema == "hml"
-        else validate_checklist(body)
+    body, counts = process_result_body(
+        text,
+        args.schema,
+        allowed_categories=allowed_categories,
     )
     print(
         json.dumps(

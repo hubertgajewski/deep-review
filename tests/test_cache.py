@@ -371,24 +371,51 @@ class ResultValidationTests(unittest.TestCase):
         )
 
     def test_sensitive_header_method_calls_are_redacted(self) -> None:
-        values = ("request-value", "response-value")
+        values = (
+            "request-value",
+            "response-value",
+            "go-request-value",
+            "go-header-value",
+            "go-response-value",
+        )
         raw = (
             "HIGH | credential-exposure | src/auth.js:40 | "
             f'xhr.setRequestHeader("Authorization", "{values[0]}") | remove it\n'
             "HIGH | credential-exposure | src/auth.java:41 | "
             f'response.setHeader("Cookie", "{values[1]}") | remove it\n'
-            "summary: 2 high / 0 medium / 0 low\n"
+            "HIGH | credential-exposure | src/auth.go:42 | "
+            f'req.Header.Set("Authorization", "{values[2]}") | remove it\n'
+            "HIGH | credential-exposure | src/auth.go:43 | "
+            f'Header.Add("Cookie", "{values[3]}") | remove it\n'
+            "HIGH | credential-exposure | src/auth.go:44 | "
+            f'w.Header().Set("Authorization", "{values[4]}") | remove it\n'
+            "summary: 5 high / 0 medium / 0 low\n"
         )
 
         redacted = CACHE.redact_result_body(raw, "hml")
 
         for value in values:
             self.assertNotIn(value, redacted)
-        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 2)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 5)
         self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
         self.assertEqual(
-            CACHE.validate_hml(redacted), {"high": 2, "medium": 0, "low": 0}
+            CACHE.validate_hml(redacted), {"high": 5, "medium": 0, "low": 0}
         )
+
+    def test_sensitive_header_placeholders_are_preserved(self) -> None:
+        raw = (
+            "LOW | configuration | src/auth.py:45 | "
+            "Authorization: ${API_TOKEN} | keep the placeholder\n"
+            "LOW | configuration | src/auth.py:46 | "
+            "\"Cookie\": \"<secret>\" | keep the placeholder\n"
+            "LOW | configuration | src/auth.java:47 | "
+            "setHeader(\"Authorization\", \"[REDACTED]\") | keep the placeholder\n"
+            "LOW | configuration | src/auth.go:48 | "
+            "req.Header.Set(\"Cookie\", \"${SESSION_COOKIE}\") | keep the placeholder\n"
+            "summary: 0 high / 0 medium / 4 low\n"
+        )
+
+        self.assertEqual(CACHE.redact_result_body(raw, "hml"), raw)
 
     def test_bare_header_names_followed_by_commas_are_not_assignments(self) -> None:
         raw = (
