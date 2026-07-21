@@ -539,23 +539,51 @@ def credential_value_is_placeholder(value: str) -> bool:
     return normalized.startswith("$") or set(normalized) <= {"*", "x", "-"}
 
 
-def header_value_is_placeholder(value: str) -> bool:
+def complete_header_value_is_placeholder(value: str) -> bool:
+    normalized = value.strip()
+    if normalized.startswith("$"):
+        return bool(
+            re.fullmatch(
+                r"(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*)",
+                normalized,
+            )
+        )
+    return credential_value_is_placeholder(normalized)
+
+
+def quoted_placeholder_value(value: str) -> bool:
+    if value[:1] not in {"'", '"'}:
+        return False
+    quote = value[0]
+    end = value.find(quote, 1)
+    return end == len(value) - 1 and complete_header_value_is_placeholder(
+        value[1:end]
+    )
+
+
+def header_value_is_placeholder(value: str, *, method_call: bool) -> bool:
     candidate = value.lstrip()
+    if method_call:
+        closing = candidate.find(")")
+        if closing < 0:
+            return False
+        expression = candidate[:closing].strip()
+        if quoted_placeholder_value(expression):
+            return True
+        return complete_header_value_is_placeholder(expression)
     if candidate[:1] in {"'", '"'}:
         quote = candidate[0]
         end = candidate.find(quote, 1)
         if end < 0:
             return False
-        following = candidate[end + 1 : end + 2]
-        if following and not following.isspace() and following not in ",;).!?":
+        suffix = candidate[end + 1 :].lstrip()
+        if suffix and suffix[0] not in ",;:.!?":
             return False
-        candidate = candidate[1:end]
-    else:
-        tokens = candidate.split(maxsplit=1)
-        if not tokens:
-            return True
-        candidate = tokens[0].rstrip(",;:.!?)")
-    return credential_value_is_placeholder(candidate)
+        return complete_header_value_is_placeholder(candidate[1:end])
+    candidate = candidate.rstrip()
+    while candidate[-1:] in {",", ";", ":", ".", "!", "?"}:
+        candidate = candidate[:-1].rstrip()
+    return complete_header_value_is_placeholder(candidate)
 
 
 def redact_sensitive_text(text: str) -> str:
@@ -564,7 +592,10 @@ def redact_sensitive_text(text: str) -> str:
     def replace_sensitive_header(match: re.Match[str]) -> str:
         prefix = match.group(1)
         value = match.group(0)[len(prefix) :]
-        if header_value_is_placeholder(value):
+        if header_value_is_placeholder(
+            value,
+            method_call=prefix.rstrip().endswith(","),
+        ):
             return match.group(0)
         return f"{prefix}{REDACTION_MARKER}"
 
