@@ -45,6 +45,7 @@ def manifest(agent: str = "code") -> dict[str, object]:
         "orchestrator_hash": digest("orchestrator"),
         "agent_prompt_hash": digest("agent"),
         "config_hash": digest("config"),
+        "blocking_policy": ["HIGH", "MEDIUM"],
         "checklist_hash": digest("checklist"),
         "references_hash": digest("references"),
         "scoped_prompt_hash": digest("prompt"),
@@ -95,6 +96,7 @@ class KeyTests(unittest.TestCase):
             "orchestrator_hash": digest("orchestrator-two"),
             "agent_prompt_hash": digest("agent-two"),
             "config_hash": digest("config-two"),
+            "blocking_policy": ["HIGH"],
             "checklist_hash": digest("checklist-two"),
             "references_hash": digest("references-two"),
             "scoped_prompt_hash": digest("prompt-two"),
@@ -109,6 +111,104 @@ class KeyTests(unittest.TestCase):
                 self.assertNotEqual(
                     CACHE.sha256_bytes(CACHE.canonical_bytes(changed)), original_key
                 )
+
+
+class BlockingPolicyTests(unittest.TestCase):
+    def test_builtin_policy_tracks_default_stricter_and_looser_global_configuration(self) -> None:
+        declared = ["HIGH", "MEDIUM"]
+        cases = (
+            (["HIGH", "MEDIUM", "CHECKLIST_FAIL"], ("HIGH", "MEDIUM")),
+            (["HIGH", "MEDIUM", "LOW", "CHECKLIST_FAIL"], ("HIGH", "MEDIUM", "LOW")),
+            (["HIGH", "CHECKLIST_FAIL"], ("HIGH",)),
+        )
+        for global_values, expected in cases:
+            with self.subTest(global_values=global_values):
+                self.assertEqual(
+                    CACHE.effective_blocking_policy(
+                        "hml", global_values, declared, built_in=True
+                    ),
+                    expected,
+                )
+
+        checklist_cases = (
+            (["HIGH", "MEDIUM", "CHECKLIST_FAIL"], ("fail",)),
+            (["HIGH", "MEDIUM", "LOW", "CHECKLIST_FAIL"], ("fail",)),
+            (["HIGH", "MEDIUM"], ()),
+        )
+        for global_values, expected in checklist_cases:
+            with self.subTest(global_values=global_values, schema="checklist"):
+                self.assertEqual(
+                    CACHE.effective_blocking_policy(
+                        "checklist", global_values, ["fail"], built_in=True
+                    ),
+                    expected,
+                )
+
+    def test_extension_policy_intersects_with_global_configuration(self) -> None:
+        declared = ["HIGH", "MEDIUM"]
+        cases = (
+            (["HIGH", "MEDIUM", "CHECKLIST_FAIL"], ("HIGH", "MEDIUM")),
+            (["HIGH", "MEDIUM", "LOW", "CHECKLIST_FAIL"], ("HIGH", "MEDIUM")),
+            (["HIGH", "CHECKLIST_FAIL"], ("HIGH",)),
+        )
+        for global_values, expected in cases:
+            with self.subTest(global_values=global_values):
+                self.assertEqual(
+                    CACHE.effective_blocking_policy(
+                        "hml", global_values, declared, built_in=False
+                    ),
+                    expected,
+                )
+
+    def test_checklist_fail_and_global_token_normalize_to_one_native_value(self) -> None:
+        self.assertEqual(
+            CACHE.effective_blocking_policy(
+                "checklist", ["CHECKLIST_FAIL"], ["fail"], built_in=False
+            ),
+            ("fail",),
+        )
+        self.assertEqual(
+            CACHE.effective_blocking_policy("checklist", ["HIGH"], ["fail"], built_in=False),
+            (),
+        )
+
+    def test_invalid_or_contradictory_policies_are_rejected(self) -> None:
+        invalid_calls = (
+            lambda: CACHE.normalize_global_blocking(["HIGH", "HIGH"]),
+            lambda: CACHE.normalize_global_blocking(["fail"]),
+            lambda: CACHE.normalize_schema_blocking("hml", ["CHECKLIST_FAIL"]),
+            lambda: CACHE.normalize_schema_blocking("checklist", ["fail", "fail"]),
+            lambda: CACHE.validate_manifest_blocking(["HIGH", "fail"]),
+            lambda: CACHE.effective_blocking_policy(
+                "hml", ["HIGH"], ["HIGH"], built_in=True
+            ),
+        )
+        for call in invalid_calls:
+            with self.subTest(call=call), self.assertRaises(CACHE.CacheError):
+                call()
+
+    def test_result_classification_uses_only_the_effective_policy(self) -> None:
+        counts = {"high": 0, "medium": 1, "low": 1}
+        self.assertEqual(
+            CACHE.classify_result(
+                "hml", counts, ["HIGH", "MEDIUM"], dependencies_complete=True
+            ),
+            "blocking",
+        )
+        self.assertEqual(
+            CACHE.classify_result("hml", counts, ["HIGH"], dependencies_complete=True),
+            "nonblocking",
+        )
+        self.assertEqual(
+            CACHE.classify_result("hml", counts, ["HIGH"], dependencies_complete=False),
+            "incomplete",
+        )
+        self.assertEqual(
+            CACHE.classify_result(
+                "hml", counts, ["MEDIUM"], dependencies_complete=False
+            ),
+            "blocking",
+        )
 
 
 class ResultValidationTests(unittest.TestCase):
@@ -306,6 +406,57 @@ class CacheStorageTests(unittest.TestCase):
         CACHE.atomic_write(record_path, tampered)
         with self.assertRaises(CACHE.CacheError):
             CACHE.command_lookup(argparse.Namespace(**common))
+
+    def test_store_derives_and_lookup_revalidates_classification(self) -> None:
+        result_path = self.root / "result.json"
+        manifest_path = self.root / "manifest.json"
+        key_manifest = manifest()
+        key_manifest["blocking_policy"] = ["HIGH"]
+        manifest_path.write_text(json.dumps(key_manifest), encoding="utf-8")
+        key = CACHE.sha256_bytes(CACHE.canonical_bytes(key_manifest))
+        result_path.write_text(
+            json.dumps(
+                {
+                    "body": (
+                        "MEDIUM | functionality | src/a.py:4 | wrong value | fix it\n"
+                        "summary: 0 high / 1 medium / 0 low\n"
+                    ),
+                    "summary": {"high": 0, "medium": 1, "low": 0},
+                }
+            ),
+            encoding="utf-8",
+        )
+        args = argparse.Namespace(
+            repo_root=str(self.root),
+            cache_dir=".deep-review-cache",
+            agent="code",
+            key=key,
+            iteration=1,
+            schema="hml",
+            manifest=str(manifest_path),
+            result=str(result_path),
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            CACHE.command_store(args)
+        self.assertEqual(json.loads(output.getvalue())["classification"], "nonblocking")
+
+        with self.assertRaisesRegex(CACHE.CacheError, "classification must be nonblocking"):
+            CACHE.command_store(argparse.Namespace(**vars(args), classification="blocking"))
+
+        record_path = self.cache_dir / "agents" / "code.json"
+        tampered = CACHE.read_json(record_path)
+        tampered["classification"] = "blocking"
+        CACHE.atomic_write(record_path, tampered)
+        with self.assertRaisesRegex(CACHE.CacheError, "classification disagrees"):
+            CACHE.command_lookup(
+                argparse.Namespace(
+                    repo_root=str(self.root),
+                    cache_dir=".deep-review-cache",
+                    agent="code",
+                    key=key,
+                )
+            )
 
     def test_cache_survives_separate_process_invocations(self) -> None:
         result_path = self.root / "result.json"

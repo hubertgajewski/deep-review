@@ -44,6 +44,32 @@ blocking_levels = ["HIGH", "CHECKLIST_FAIL"]
 
 This changes aggregation, not reviewer instructions or severity guidance. A consumer cannot disable the final guard or change the fixed three-iteration limit.
 
+Deep Review normalizes the global list into each reviewer's output schema. For built-in
+reviewers, the normalized global list is the effective policy; built-in frontmatter
+records the package default (`HIGH` and `MEDIUM` for H/M/L, `fail` for checklist).
+For an extension, the effective policy is the intersection of its schema-native
+`blocking` list and the normalized global list. Checklist frontmatter uses `fail`, while
+the equivalent global token is `CHECKLIST_FAIL`.
+
+For an extension declaring `blocking: [HIGH, MEDIUM]`, the results are concrete:
+
+| Global `blocking_levels` | Effective extension policy |
+| --- | --- |
+| `["HIGH", "MEDIUM", "CHECKLIST_FAIL"]` (default) | `HIGH`, `MEDIUM` |
+| `["HIGH", "MEDIUM", "LOW", "CHECKLIST_FAIL"]` (stricter) | `HIGH`, `MEDIUM` |
+| `["HIGH", "CHECKLIST_FAIL"]` (looser) | `HIGH` |
+
+The stricter global example makes `LOW` blocking for built-in H/M/L reviewers, but not
+for this extension because it did not declare `LOW`. A checklist extension declaring
+`blocking: [fail]` blocks when global policy contains `CHECKLIST_FAIL` and becomes
+advisory when that token is absent. An explicit extension `blocking: []` is also
+advisory; a missing or null declaration is invalid.
+
+Unknown values, duplicates, values from the wrong schema, global/native token mixing,
+and contradictory built-in declarations make review policy loading `incomplete` before
+dispatch. The effective per-agent policy is included in cache identity and is used to
+classify both fresh and cached results.
+
 ## Deny credential-bearing paths
 
 `deny_components` is a safety boundary applied case-insensitively to each path component. Its defaults reject `.env*`, `*credential*`, `*.key`, `*.pem`, `*.p12`, `*.pfx`, `*secret*`, and `*password*`. You may replace the list in trusted committed configuration when a repository needs different path policy.
@@ -142,7 +168,7 @@ copybook compatibility, and arithmetic-semantic defects. Apply the project
 rules in `docs/cobol-guidelines.md` and follow the shared Deep Review contract.
 ```
 
-Every reference must exist at the trusted revision. Names use lowercase letters, digits, and hyphens. `prompt_scope` is `full` or `matched`; `output_schema` is `hml` or `checklist`. Extension `blocking` values follow the selected schema.
+Every reference must exist at the trusted revision. Names use lowercase letters, digits, and hyphens. `prompt_scope` is `full` or `matched`; `output_schema` is `hml` or `checklist`. Extension `blocking` values follow the selected schema and intersect with the normalized global policy described above.
 
 Built-in ownership takes precedence when subjects overlap. Duplicate extension names or domains, identities equal to built-in names or language-rule namespaces, attempts to replace shared rules, missing references, or unsafe paths make the review incomplete.
 

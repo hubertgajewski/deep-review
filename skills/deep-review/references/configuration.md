@@ -57,7 +57,40 @@ TOML `true` is not the integer `1`. Validate this field before dispatch and neve
 coerce, or silently replace an invalid value. `final_guard` is intentionally not
 configurable and does not count as an iteration.
 
-`blocking_levels` accepts only `HIGH`, `MEDIUM`, `LOW`, and `CHECKLIST_FAIL`. `CHECKLIST_FAIL` is the canonical global token for checklist `fail` results; reject unknown values and duplicates.
+`blocking_levels` accepts only `HIGH`, `MEDIUM`, `LOW`, and `CHECKLIST_FAIL`.
+Reject non-arrays, non-string entries, unknown values, and duplicates. Normalize accepted
+values into canonical order `HIGH`, `MEDIUM`, `LOW`, `CHECKLIST_FAIL`; source order has
+no precedence meaning. `CHECKLIST_FAIL` is the only global checklist token. For an
+H/M/L agent, project the global policy to its H/M/L values. For a checklist agent, drop
+the H/M/L values and map `CHECKLIST_FAIL` to schema-native `fail`.
+
+## Effective per-agent blocking policy
+
+Compute one schema-native policy for every matching agent before dispatch:
+
+1. Validate and normalize the global policy as described above.
+2. Validate the agent's `blocking` declaration in its native schema. H/M/L declarations
+   accept only `HIGH`, `MEDIUM`, and `LOW`; checklist declarations accept only `fail`.
+3. For a built-in agent, require its declaration to equal the package default
+   (`HIGH`, `MEDIUM` for H/M/L; `fail` for checklist), then use the global policy
+   projected into that schema. Built-in frontmatter records and checks the shipped
+   default; trusted global configuration is the supported override.
+4. For a consumer extension, intersect its normalized declaration with the projected
+   global policy. The result is ordered `HIGH`, `MEDIUM`, `LOW` or contains only
+   `fail`. Thus global policy may relax an extension policy, but adding a global level
+   does not make that level blocking unless the extension declared it.
+
+An explicit empty extension declaration (`blocking: []`) is valid and makes the
+extension advisory. A missing or null declaration is not an empty policy and is
+invalid. A duplicate `blocking` key, a non-array, a non-string entry, a duplicate
+value, a global/native token mix such as extension `CHECKLIST_FAIL`, a value from the
+other schema, or a built-in declaration that contradicts the package default makes
+policy loading `incomplete` before dispatch. Never union policies or select behavior
+from declaration order.
+
+Use this same effective policy to classify both fresh and cached results. The policy's
+canonical schema-native array is part of each agent cache-key manifest, so changing a
+global or extension policy invalidates all affected agent keys.
 
 Trusted `large_diff.full_review = true` makes an invocation full by policy; explicit `--full-review` also makes it full and cannot be negated by configuration. Readiness after a metadata-only pass still requires a distinct invocation whose effective value is true.
 
@@ -108,6 +141,12 @@ The body is the trusted reviewer instruction. `domain` is a unique extension-spe
 Names use lowercase letters, digits, and hyphens. The `x-` prefix is reserved for consumer extensions; package-owned built-in agent names, domains, and language-rule namespaces must never use it. Consumers should use `x-<owner>-<purpose>` for the filename, `name`, and `domain`. The filename, `name`, and `domain` must each be unique across extension files; two files cannot share a `name` even when their domains differ. Existing extension names without `x-` remain valid, but do not carry the same forward-compatibility guarantee.
 
 `prompt_scope` is `full` or `matched`; `output_schema` is `hml` or `checklist`. Reject missing or unknown fields that affect readiness, denied, unsafe, or unavailable reference paths, duplicate extension names or domains, names or domains equal to a built-in agent or language-rule namespace, and attempts to replace shared rules.
+
+Extension `blocking` values use the selected schema's native vocabulary. The effective
+policy is their intersection with normalized global policy, as defined above. For
+example, an H/M/L extension declaring `HIGH` and `MEDIUM` blocks both under the default
+global policy, only `HIGH` under global `blocking_levels = ["HIGH"]`, and still only
+`HIGH` and `MEDIUM` under a stricter global policy that also contains `LOW`.
 
 ## Pattern rules
 

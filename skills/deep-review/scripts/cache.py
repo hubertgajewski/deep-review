@@ -53,11 +53,21 @@ KEY_FIELDS = {
     "orchestrator_hash",
     "agent_prompt_hash",
     "config_hash",
+    "blocking_policy",
     "checklist_hash",
     "references_hash",
     "scoped_prompt_hash",
     "dependencies_complete",
     "dependencies",
+}
+GLOBAL_BLOCKING_ORDER = ("HIGH", "MEDIUM", "LOW", "CHECKLIST_FAIL")
+SCHEMA_BLOCKING_ORDER = {
+    "hml": ("HIGH", "MEDIUM", "LOW"),
+    "checklist": ("fail",),
+}
+BUILTIN_DEFAULT_BLOCKING = {
+    "hml": ("HIGH", "MEDIUM"),
+    "checklist": ("fail",),
 }
 
 
@@ -98,6 +108,108 @@ def validate_agent(agent: str) -> None:
 def validate_hash(value: str, name: str) -> None:
     if not isinstance(value, str) or not HEX_RE.fullmatch(value):
         raise CacheError(f"{name} must be a lowercase SHA-256 hex digest")
+
+
+def normalize_global_blocking(values: Any) -> tuple[str, ...]:
+    if not isinstance(values, list):
+        raise CacheError("global blocking_levels must be an array")
+    if any(not isinstance(value, str) for value in values):
+        raise CacheError("global blocking_levels must contain only strings")
+    if len(values) != len(set(values)):
+        raise CacheError("global blocking_levels cannot contain duplicates")
+    unknown = sorted(set(values) - set(GLOBAL_BLOCKING_ORDER))
+    if unknown:
+        raise CacheError(f"unsupported global blocking level: {', '.join(unknown)}")
+    return tuple(value for value in GLOBAL_BLOCKING_ORDER if value in values)
+
+
+def normalize_schema_blocking(schema: str, values: Any) -> tuple[str, ...]:
+    if schema not in SCHEMA_BLOCKING_ORDER:
+        raise CacheError(f"unsupported result schema: {schema}")
+    if not isinstance(values, list):
+        raise CacheError("agent blocking policy must be an array")
+    if any(not isinstance(value, str) for value in values):
+        raise CacheError("agent blocking policy must contain only strings")
+    if len(values) != len(set(values)):
+        raise CacheError("agent blocking policy cannot contain duplicates")
+    allowed = SCHEMA_BLOCKING_ORDER[schema]
+    unknown = sorted(set(values) - set(allowed))
+    if unknown:
+        raise CacheError(
+            f"blocking policy values do not belong to {schema}: {', '.join(unknown)}"
+        )
+    return tuple(value for value in allowed if value in values)
+
+
+def validate_manifest_blocking(values: Any) -> None:
+    if not isinstance(values, list):
+        raise CacheError("blocking_policy must be an array")
+    if any(not isinstance(value, str) for value in values):
+        raise CacheError("blocking_policy must contain only strings")
+    if len(values) != len(set(values)):
+        raise CacheError("blocking_policy cannot contain duplicates")
+    allowed = set(SCHEMA_BLOCKING_ORDER["hml"]) | set(
+        SCHEMA_BLOCKING_ORDER["checklist"]
+    )
+    unknown = sorted(set(values) - allowed)
+    if unknown:
+        raise CacheError(f"unsupported blocking_policy value: {', '.join(unknown)}")
+    if "fail" in values and len(values) != 1:
+        raise CacheError("blocking_policy cannot mix H/M/L and checklist values")
+    canonical = [
+        value for value in (*SCHEMA_BLOCKING_ORDER["hml"], "fail") if value in values
+    ]
+    if values != canonical:
+        raise CacheError("blocking_policy must use canonical severity order")
+
+
+def global_policy_for_schema(schema: str, global_values: Any) -> tuple[str, ...]:
+    normalized = normalize_global_blocking(global_values)
+    if schema == "hml":
+        return tuple(
+            value for value in SCHEMA_BLOCKING_ORDER["hml"] if value in normalized
+        )
+    if schema == "checklist":
+        return ("fail",) if "CHECKLIST_FAIL" in normalized else ()
+    raise CacheError(f"unsupported result schema: {schema}")
+
+
+def effective_blocking_policy(
+    schema: str,
+    global_values: Any,
+    declared_values: Any,
+    *,
+    built_in: bool,
+) -> tuple[str, ...]:
+    declared = normalize_schema_blocking(schema, declared_values)
+    global_policy = global_policy_for_schema(schema, global_values)
+    if built_in:
+        if declared != BUILTIN_DEFAULT_BLOCKING[schema]:
+            raise CacheError("built-in blocking policy contradicts the package default")
+        return global_policy
+    return tuple(
+        value
+        for value in SCHEMA_BLOCKING_ORDER[schema]
+        if value in declared and value in global_policy
+    )
+
+
+def classify_result(
+    schema: str,
+    counts: dict[str, int],
+    blocking_policy: Any,
+    *,
+    dependencies_complete: bool,
+) -> str:
+    policy = normalize_schema_blocking(schema, blocking_policy)
+    if schema == "hml":
+        count_names = {"HIGH": "high", "MEDIUM": "medium", "LOW": "low"}
+        blocking = any(counts[count_names[value]] for value in policy)
+    else:
+        blocking = "fail" in policy and bool(counts["fail"])
+    if blocking:
+        return "blocking"
+    return "nonblocking" if dependencies_complete else "incomplete"
 
 
 def validate_repo_path(value: str, name: str) -> None:
@@ -262,6 +374,7 @@ def validate_key_manifest(value: Any) -> dict[str, Any]:
         "scoped_prompt_hash",
     ):
         validate_hash(value[name], name)
+    validate_manifest_blocking(value["blocking_policy"])
     if not isinstance(value["dependencies_complete"], bool):
         raise CacheError("dependencies_complete must be boolean")
     dependencies = value["dependencies"]
@@ -421,19 +534,30 @@ def command_store(args: argparse.Namespace) -> None:
     ):
         raise CacheError(f"iteration must be between 1 and {MAX_ITERATIONS}")
     result = read_json(Path(args.result))
-    validate_result_object(result, args.schema)
+    counts = validate_result_object(result, args.schema)
     manifest = validate_key_manifest(read_json(Path(args.manifest)))
     if manifest["agent"] != args.agent:
         raise CacheError("record agent does not match key manifest agent")
     manifest_key = sha256_bytes(canonical_bytes(manifest))
     if manifest_key != args.key:
         raise CacheError("record key does not match canonical key manifest")
+    classification = classify_result(
+        args.schema,
+        counts,
+        manifest["blocking_policy"],
+        dependencies_complete=manifest["dependencies_complete"],
+    )
+    requested_classification = getattr(args, "classification", None)
+    if requested_classification is not None and requested_classification != classification:
+        raise CacheError(
+            f"classification must be {classification} under the effective blocking policy"
+        )
     cache_dir = safe_cache_dir(args.repo_root, args.cache_dir, create=True)
     record = {
         "schema_version": SCHEMA_VERSION,
         "agent": args.agent,
         "key": args.key,
-        "classification": args.classification,
+        "classification": classification,
         "iteration": args.iteration,
         "schema": args.schema,
         "manifest": manifest,
@@ -466,7 +590,17 @@ def validate_cached_record(record: Any, expected_agent: str) -> dict[str, Any]:
     manifest = validate_key_manifest(record["manifest"])
     if manifest["agent"] != expected_agent or sha256_bytes(canonical_bytes(manifest)) != record["key"]:
         raise CacheError("cached key manifest does not match record identity")
-    validate_result_object(record["result"], record["schema"])
+    counts = validate_result_object(record["result"], record["schema"])
+    expected_classification = classify_result(
+        record["schema"],
+        counts,
+        manifest["blocking_policy"],
+        dependencies_complete=manifest["dependencies_complete"],
+    )
+    if record["classification"] != expected_classification:
+        raise CacheError(
+            "cached agent record classification disagrees with its blocking policy"
+        )
     if not isinstance(record["stored_at"], str) or not record["stored_at"]:
         raise CacheError("cached agent record has invalid timestamp")
     return record
@@ -705,7 +839,11 @@ def build_parser() -> argparse.ArgumentParser:
         if name != "probe":
             subparser.add_argument("--key", required=True)
         if name == "store":
-            subparser.add_argument("--classification", choices=("nonblocking", "blocking", "incomplete"), required=True)
+            subparser.add_argument(
+                "--classification",
+                choices=("nonblocking", "blocking", "incomplete"),
+                help="optional assertion; classification is derived from the effective policy",
+            )
             subparser.add_argument("--iteration", type=int, required=True)
             subparser.add_argument("--schema", choices=("hml", "checklist"), required=True)
             subparser.add_argument("--manifest", required=True)

@@ -120,6 +120,12 @@ Report bucket counts, threshold, and partial/full coverage state.
 
 Evaluate triggers from trusted configuration, changed paths, new paths, and added lines. Use broad conservative defaults from [Orchestration](references/orchestration.md). Validate the language-agent and language-rule disable lists before dispatch; an invalid list makes the review `incomplete` rather than silently changing coverage.
 
+Before dispatch, validate and normalize global and per-agent blocking declarations and
+derive each effective schema-native policy exactly as specified in
+[Configuration](references/configuration.md). A malformed, duplicate, unsupported, or
+contradictory policy makes configuration or extension loading `incomplete`; never guess
+precedence. Retain the effective policy for fresh aggregation and that agent's cache key.
+
 Build each prompt from a self-contained trusted bundle in this order: the shared agent contract, the agent's exact H/M/L or checklist schema, and the trusted agent prompt. For a language agent, append only its enabled rule fragments in the agent-declared order and include the ordered enabled rule IDs; do not load disabled fragments. Follow that bundle immediately with this frame:
 
 ```text
@@ -159,6 +165,10 @@ When the reviewed state is identical to a cached blocked state, re-emit the bloc
 ### 7. Validate and aggregate
 
 Validate each result using [Output schemas](references/output-schemas.md). Recount every result; count drift is malformed output. For a language agent, also require every finding category to be one of that invocation's enabled namespaced rule IDs. A disabled or unknown rule category is malformed and prevents readiness.
+
+Classify every validated result with the same retained effective per-agent blocking
+policy used in its key manifest. Do not separately reinterpret extension frontmatter or
+global tokens during aggregation, storage, or lookup.
 
 Emit one section per roster row in roster order, including `SKIPPED`, `REUSED`, and `UNAVAILABLE` states. Then emit:
 
