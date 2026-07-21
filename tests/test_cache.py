@@ -450,6 +450,26 @@ class ResultValidationTests(unittest.TestCase):
         self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 4)
         self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
 
+    def test_placeholder_headers_do_not_hide_later_credentials(self) -> None:
+        values = ("later-cookie-value", "later-auth-value")
+        raw = (
+            "HIGH | credential-exposure | src/auth.py:54 | "
+            f'"Authorization": "${{API_TOKEN}}", Cookie: {values[0]} | remove it\n'
+            "HIGH | credential-exposure | src/auth.go:55 | "
+            "headers.Set(\"Authorization\", \"[REDACTED]\"); "
+            f'headers.Add("Cookie", "{values[1]}") | remove it\n'
+            "summary: 2 high / 0 medium / 0 low\n"
+        )
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for value in values:
+            self.assertNotIn(value, redacted)
+        self.assertIn('"Authorization": "${API_TOKEN}"', redacted)
+        self.assertIn('headers.Set("Authorization", "[REDACTED]")', redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 2)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+
     def test_bare_header_names_followed_by_commas_are_not_assignments(self) -> None:
         raw = (
             'LOW | "Authorization",review | src/"authorization",notes.txt:12 | '

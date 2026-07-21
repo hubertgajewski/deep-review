@@ -541,6 +541,12 @@ def credential_value_is_placeholder(value: str) -> bool:
 
 def complete_header_value_is_placeholder(value: str) -> bool:
     normalized = value.strip()
+    if normalized[:1] in {"'", '"'}:
+        quote = normalized[0]
+        end = normalized.find(quote, 1)
+        if end != len(normalized) - 1:
+            return False
+        normalized = normalized[1:end]
     if normalized.startswith("$"):
         return bool(
             re.fullmatch(
@@ -551,55 +557,56 @@ def complete_header_value_is_placeholder(value: str) -> bool:
     return credential_value_is_placeholder(normalized)
 
 
-def quoted_placeholder_value(value: str) -> bool:
-    if value[:1] not in {"'", '"'}:
-        return False
-    quote = value[0]
-    end = value.find(quote, 1)
-    return end == len(value) - 1 and complete_header_value_is_placeholder(
-        value[1:end]
-    )
-
-
-def header_value_is_placeholder(value: str, *, method_call: bool) -> bool:
+def header_placeholder_end(value: str, *, method_call: bool) -> int | None:
     candidate = value.lstrip()
+    leading_whitespace = len(value) - len(candidate)
     if method_call:
         closing = candidate.find(")")
         if closing < 0:
-            return False
+            return None
         expression = candidate[:closing].strip()
-        if quoted_placeholder_value(expression):
-            return True
-        return complete_header_value_is_placeholder(expression)
+        if complete_header_value_is_placeholder(expression):
+            return leading_whitespace + closing + 1
+        return None
     if candidate[:1] in {"'", '"'}:
         quote = candidate[0]
         end = candidate.find(quote, 1)
         if end < 0:
-            return False
+            return None
         suffix = candidate[end + 1 :].lstrip()
-        if suffix and suffix[0] not in ",;:.!?":
-            return False
-        return complete_header_value_is_placeholder(candidate[1:end])
+        if suffix and suffix[0] not in ",;.!":
+            return None
+        if complete_header_value_is_placeholder(candidate[: end + 1]):
+            return leading_whitespace + end + 1
+        return None
     candidate = candidate.rstrip()
     while candidate[-1:] in {",", ";", ":", ".", "!", "?"}:
         candidate = candidate[:-1].rstrip()
-    return complete_header_value_is_placeholder(candidate)
+    if complete_header_value_is_placeholder(candidate):
+        return len(value)
+    return None
 
 
 def redact_sensitive_text(text: str) -> str:
     redacted = PRIVATE_KEY_RE.sub(REDACTION_MARKER, text)
-
-    def replace_sensitive_header(match: re.Match[str]) -> str:
+    pending = redacted
+    header_parts: list[str] = []
+    while match := SENSITIVE_HEADER_RE.search(pending):
+        header_parts.append(pending[: match.start()])
         prefix = match.group(1)
         value = match.group(0)[len(prefix) :]
-        if header_value_is_placeholder(
+        placeholder_end = header_placeholder_end(
             value,
             method_call=prefix.rstrip().endswith(","),
-        ):
-            return match.group(0)
-        return f"{prefix}{REDACTION_MARKER}"
+        )
+        if placeholder_end is not None:
+            header_parts.append(f"{prefix}{value[:placeholder_end]}")
+            pending = value[placeholder_end:] + pending[match.end() :]
+            continue
+        header_parts.append(f"{prefix}{REDACTION_MARKER}")
+        pending = pending[match.end() :]
 
-    redacted = SENSITIVE_HEADER_RE.sub(replace_sensitive_header, redacted)
+    redacted = "".join(header_parts) + pending
     for pattern in WELL_KNOWN_CREDENTIAL_RES:
         redacted = pattern.sub(REDACTION_MARKER, redacted)
 
