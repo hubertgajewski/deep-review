@@ -75,6 +75,8 @@ Find the repository root with `git rev-parse --show-toplevel`. Load policy from 
 
 If `.deep-review/config.toml`, `.deep-review/checklist.md`, or `.deep-review/agents/**` does not exist at the trusted revision, use defaults or skip that extension. Still include changed policy files in the reviewed scope.
 
+Before reading any trusted extension reference, validate its literal repository-relative path and tree mode against traversal, denied-component, containment, and symlink rules at the trusted revision. Read accepted references directly from that immutable object identity; this policy phase does not use the reviewed-head snapshot.
+
 ### 2. Resolve scope and preflight paths
 
 Follow [Scope resolution](references/scope-resolution.md). Resolve trusted identities, then perform the complete metadata-only path preflight before retrieving diff hunks, untracked contents, snapshots, or dependency content. Validate every changed path, untracked path, and rename/copy source and destination for traversal, repository containment, symlinks, and denied components. A denied path fails the whole scope; never reduce a mixed scope to an allowed subset.
@@ -88,7 +90,8 @@ Print one mode line before dispatch. On failure, emit `Failed at scope resolutio
 Before any dispatch:
 
 - require the path manifest to be the accepted result of the metadata-only preflight;
-- apply the same normalization, containment, no-follow, and denied-component checks before every primary path-mode body, surrounding-context, extension-reference, or dependency read;
+- capture local untracked and path-mode primary bodies before snapshotting through repository-root-anchored, no-follow descriptors tied to retained preflight identities;
+- after snapshotting, apply normalization, snapshot containment, no-follow, and denied-component checks before every surrounding-context or dependency read;
 - entity-encode prompt-frame tag literals inside all interpolated values;
 - parse the diff once into per-file blocks;
 - derive changed paths, new paths, statuses, added lines, changed-line count, and a complete changed-file manifest.

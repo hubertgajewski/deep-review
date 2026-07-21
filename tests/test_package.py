@@ -205,15 +205,24 @@ class PackageTests(unittest.TestCase):
 
         path_enumeration = "enumerate entry names and no-follow file metadata"
         path_preflight = "Run the complete path preflight over every enumerated path"
-        path_binary_read = "reading bytes for binary detection"
-        path_synthetic_hunk = "synthetic hunk"
+        primary_capture = "## Primary input capture"
+        immutable_context = "## Immutable review context"
+        path_binary_read = "perform binary detection"
+        path_synthetic_hunk = "construct synthetic hunks"
         self.assertLess(scope.index(path_enumeration), scope.index(path_preflight))
-        self.assertLess(scope.index(path_preflight), scope.index(path_binary_read))
-        self.assertLess(scope.index(path_preflight), scope.index(path_synthetic_hunk))
-        self.assertIn("descriptor-relative to an anchored repository-root directory descriptor", scope)
+        self.assertLess(scope.index(path_preflight), scope.index(primary_capture))
+        self.assertLess(scope.index(primary_capture), scope.index(immutable_context))
+        self.assertLess(scope.index(primary_capture), scope.index(path_binary_read, scope.index(primary_capture)))
+        self.assertLess(scope.index(primary_capture), scope.index(path_synthetic_hunk, scope.index(primary_capture)))
+        self.assertIn("mutable primary inputs only", scope)
+        self.assertIn("anchored repository-root directory descriptor", scope)
         self.assertIn("post-open metadata to identify the same regular file", scope)
-        self.assertIn("fails the complete atomic path scope", scope)
+        self.assertIn("fails the complete atomic scope", scope)
         self.assertIn("never fall back to a path-based reopen", scope)
+        self.assertIn("Primary capture never refers to a snapshot root", scope)
+        self.assertIn("descriptor-relative to the snapshot root", scope)
+        self.assertIn("Primary inputs are never reopened here", scope)
+        self.assertIn("Trusted extension references were separately validated", scope)
 
         range_metadata = (
             "git diff --name-status -z --find-renames --find-copies-harder "
@@ -464,10 +473,11 @@ class PackageTests(unittest.TestCase):
             self.assertIn(rule_id, user_config)
 
         scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
-        self.assertIn("Before every primary path-mode body", scope)
+        self.assertIn("After snapshot materialization", scope)
         self.assertIn("Reject denied components, traversal", scope)
         self.assertIn("unchanged credential-bearing path", scope)
         self.assertIn("all agents, retries, tracing, and dependency hashes complete", scope)
+        self.assertIn("Trusted-policy reads never use the reviewed-head snapshot root", config)
 
     def test_synthetic_extension_fixture_is_complete(self) -> None:
         fixture = ROOT / "tests" / "fixtures" / "consumer" / ".deep-review"

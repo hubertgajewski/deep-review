@@ -10,7 +10,7 @@
 
 ## Trusted loading
 
-Treat reviewed configuration as contributor input. Read `.deep-review/config.toml`, `.deep-review/checklist.md`, and `.deep-review/agents/*.md` from the trusted revision with `git show <trusted>:<path>`. Never source or execute configuration. Local and path reviews use committed `HEAD`; uncommitted policy changes remain reviewed input and cannot control the same review.
+Treat reviewed configuration as contributor input. Read `.deep-review/config.toml`, `.deep-review/checklist.md`, and `.deep-review/agents/*.md` from the trusted revision with `git show <trusted>:<path>`. Before reading a declared extension reference, validate its literal repository-relative path and trusted-tree mode against traversal, denied components, containment, and symlinks, then read it from the same immutable trusted revision. Trusted-policy reads never use the reviewed-head snapshot root. Never source or execute configuration. Local and path reviews use committed `HEAD`; uncommitted policy changes remain reviewed input and cannot control the same review.
 
 If Python 3.11+ is available, `tomllib` may parse TOML. Otherwise interpret only documented scalar and string-array fields conservatively; malformed values produce `incomplete`, not guessed behavior.
 
@@ -60,7 +60,7 @@ The default `**/*.groovy` CI trigger is intentionally conservative so Jenkins Sh
 
 `cache_dir` must resolve beneath the repository and must already be ignored by Git. This source repository ignores the default; each consuming repository must also ignore whichever cache path it uses. An unignored, external, symlinked, or unwritable cache path disables persistence for that invocation. Treat records as trusted local state; never restore this directory from an untrusted CI artifact or share it with jobs, forks, or users that can write it.
 
-Apply `deny_components` not only to the changed-file manifest but also before every surrounding-context, extension-reference, or dependency-content read. An unchanged denied path must never enter an agent prompt or dependency hash merely because changed code refers to it.
+Apply `deny_components` not only to the changed-file manifest but also before trusted extension-reference reads at the trusted revision and before surrounding-context or dependency-content reads at the reviewed snapshot. An unchanged denied path must never enter an agent prompt or dependency hash merely because changed code refers to it.
 
 ## Language agents and rules
 
