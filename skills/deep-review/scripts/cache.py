@@ -77,7 +77,7 @@ def read_json(path: Path, *, missing_ok: bool = False) -> Any:
         if missing_ok:
             return _MISSING_JSON
         raise CacheError(f"cannot read valid JSON from {path}: {exc}") from exc
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise CacheError(f"cannot read valid JSON from {path}: {exc}") from exc
 
 
@@ -390,7 +390,7 @@ def command_key(args: argparse.Namespace) -> None:
 def command_validate_result(args: argparse.Namespace) -> None:
     try:
         text = Path(args.file).read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise CacheError(f"cannot read {args.file}: {exc}") from exc
     allowed_categories = None
     if args.allowed_category:
