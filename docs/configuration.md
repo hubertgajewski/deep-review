@@ -44,6 +44,8 @@ This changes aggregation, not reviewer instructions or severity guidance. A cons
 
 Deep Review first enumerates the complete changed-path manifest without patch bodies, including untracked paths and both sides of renames or copies. It validates the whole manifest before retrieving diff hunks, reading untracked files, creating a snapshot, or hashing dependencies. One denied path fails the entire scope; an allowed/denied mixed change is never reduced to only its allowed files. The same checks run before reading unchanged surrounding context, extension references, or dependency content, so an unchanged credential-bearing file cannot enter a prompt or hash indirectly.
 
+Mutable files and snapshot context are opened through a platform secure-open adapter anchored to the relevant repository or snapshot root. The adapter must reject symlink and Windows reparse-point traversal, preserve the preflight file identity, and prove containment. POSIX descriptor-relative and Windows handle-relative implementations are both valid when they establish those guarantees; a client that cannot establish them fails or marks required context incomplete instead of silently weakening the boundary.
+
 ## Disable a language reviewer
 
 All built-in language reviewers are enabled by default. Disable a complete reviewer by name:

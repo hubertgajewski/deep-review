@@ -90,8 +90,8 @@ Print one mode line before dispatch. On failure, emit `Failed at scope resolutio
 Before any dispatch:
 
 - require the path manifest to be the accepted result of the metadata-only preflight;
-- capture local untracked and path-mode primary bodies before snapshotting through repository-root-anchored, no-follow descriptors tied to retained preflight identities;
-- after snapshotting, apply normalization, snapshot containment, no-follow, and denied-component checks before every surrounding-context or dependency read;
+- capture local untracked and path-mode primary bodies before snapshotting through a platform secure-open adapter anchored to the repository root, rejecting symlink or reparse-point traversal and proving the retained preflight identity;
+- after snapshotting, apply normalization, snapshot containment, link-safe opening, and denied-component checks through the same capability-based contract before every surrounding-context or dependency read;
 - entity-encode prompt-frame tag literals inside all interpolated values;
 - parse the diff once into per-file blocks;
 - derive changed paths, new paths, statuses, added lines, changed-line count, and a complete changed-file manifest.

@@ -116,6 +116,8 @@ The `~` notation in the client table means the current user's home directory. It
 
 For WSL, `$HOME` is the Linux home directory inside the selected distribution, not the Windows `%USERPROFILE%` directory. Install the skill in the environment where the client process runs.
 
+Installation support does not permit weaker filesystem checks at review time. Local and path reviews require the active client to provide a secure-open adapter that can anchor reads to the repository root, reject symlink or Windows reparse-point traversal, verify file identity, and prove containment. When those capabilities are unavailable, Deep Review fails scope resolution before reading mutable primary content; a client may use WSL only when the reviewed repository is also inside that environment's filesystem boundary. Remote reviews apply the same invariant-based checks to their immutable snapshot context.
+
 ## Invoke Deep Review
 
 Naming the skill in natural language is the portable form:

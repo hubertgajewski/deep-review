@@ -203,7 +203,7 @@ class PackageTests(unittest.TestCase):
         self.assertIn("newly appearing denied path", scope)
         self.assertIn("byte-for-byte", scope)
 
-        path_enumeration = "enumerate entry names and no-follow file metadata"
+        path_enumeration = "enumerate entry names and link-aware file metadata"
         path_preflight = "Run the complete path preflight over every enumerated path"
         primary_capture = "## Primary input capture"
         immutable_context = "## Immutable review context"
@@ -215,14 +215,21 @@ class PackageTests(unittest.TestCase):
         self.assertLess(scope.index(primary_capture), scope.index(path_binary_read, scope.index(primary_capture)))
         self.assertLess(scope.index(primary_capture), scope.index(path_synthetic_hunk, scope.index(primary_capture)))
         self.assertIn("mutable primary inputs only", scope)
-        self.assertIn("anchored repository-root directory descriptor", scope)
-        self.assertIn("post-open metadata to identify the same regular file", scope)
+        self.assertIn("platform secure-open adapter", scope)
+        self.assertIn("anchored to a repository-root capability", scope)
+        self.assertIn("POSIX adapters", scope)
+        self.assertIn("Windows adapters", scope)
+        self.assertIn("reparse points in every path component", scope)
+        self.assertIn("fail scope resolution before reading any primary bytes", scope)
+        self.assertIn("post-open metadata has the same stable file identity", scope)
         self.assertIn("fails the complete atomic scope", scope)
         self.assertIn("never fall back to a path-based reopen", scope)
         self.assertIn("Primary capture never refers to a snapshot root", scope)
-        self.assertIn("descriptor-relative to the snapshot root", scope)
+        self.assertIn("anchored to the snapshot-root capability", scope)
+        self.assertIn("never fall back to an ordinary path open", scope)
         self.assertIn("Primary inputs are never reopened here", scope)
         self.assertIn("Trusted extension references were separately validated", scope)
+        self.assertNotIn("file descriptor-relative to an anchored", scope)
 
         range_metadata = (
             "git diff --name-status -z --find-renames --find-copies-harder "
