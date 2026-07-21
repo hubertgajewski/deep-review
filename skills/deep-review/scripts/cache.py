@@ -212,10 +212,10 @@ def atomic_write(path: Path, value: Any) -> None:
     temp_path = Path(temp_name)
     try:
         set_private_descriptor_mode(descriptor)
-        handle = os.fdopen(descriptor, "w", encoding="utf-8")
+        handle = os.fdopen(descriptor, "wb")
         descriptor = -1
         with handle:
-            handle.write(rendered)
+            handle.write(rendered_bytes)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_path, path)

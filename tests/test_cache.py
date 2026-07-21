@@ -276,6 +276,31 @@ class CacheStorageTests(unittest.TestCase):
         mode = stat.S_IMODE(path.stat().st_mode)
         self.assertEqual(mode & 0o077, 0)
 
+    def test_atomic_write_uses_exact_measured_utf8_bytes(self) -> None:
+        path = self.cache_dir / "newline-heavy.json"
+        value = {"values": [0] * 70_000}
+        expected = (
+            json.dumps(value, sort_keys=True, ensure_ascii=False, indent=2) + "\n"
+        ).encode("utf-8")
+        self.assertLessEqual(len(expected), CACHE.CACHE_RECORD_MAX_UTF8_BYTES)
+        self.assertGreater(
+            len(expected) + expected.count(b"\n"),
+            CACHE.CACHE_RECORD_MAX_UTF8_BYTES,
+        )
+
+        opened_modes: list[str] = []
+        original_fdopen = CACHE.os.fdopen
+
+        def recording_fdopen(descriptor: int, mode: str):
+            opened_modes.append(mode)
+            return original_fdopen(descriptor, mode)
+
+        with mock.patch.object(CACHE.os, "fdopen", side_effect=recording_fdopen):
+            CACHE.atomic_write(path, value)
+
+        self.assertEqual(opened_modes, ["wb"])
+        self.assertEqual(path.read_bytes(), expected)
+
     def test_cache_reads_and_writes_reject_oversized_records(self) -> None:
         read_path = self.cache_dir / "oversized-read.json"
         read_path.write_text(
