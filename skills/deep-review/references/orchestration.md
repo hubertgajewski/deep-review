@@ -5,6 +5,7 @@
 - Derived scope
 - Dispatch defaults
 - Large diffs
+- Prompt chunks and coverage
 - Cache keys and iterations
 - Final guard
 
@@ -55,6 +56,16 @@ Metadata-only placeholders include path, status, bucket, and omitted changed-lin
 
 A metadata-only required path makes coverage partial and cannot produce `ready`. Require a distinct later invocation whose effective `full_review` value is true; do not promote the partial pass automatically.
 
+Large-diff bucketing decides which content is required; it never permits an oversized required hunk to be omitted. Normal and high-risk content remains required in both partial and full modes. Effective full-review mode makes every required non-generated hunk part of the bounded prompt plan.
+
+## Prompt chunks and coverage
+
+Follow [Prompt budgets and coverage](prompt-budgets.md) after bucketing and per-agent scope matching. The hard 120,000-byte UTF-8 limit applies to every complete model turn; initial inline prompts are limited to 96,000 bytes so metered context reads retain a bounded reserve. Build an ordered per-agent chunk manifest with exact payload spans and hashes, validate all per-agent and per-review resource ceilings, then measure every prompt again after the final ordinal and total are known. Dispatch through the bounded worker queue only after the complete plan passes.
+
+One huge file is split at hunk, line, and finally Unicode-code-point boundaries without gaps. Several huge files retain accepted manifest and per-file block order. Full-review mode uses the same chunker rather than requiring all content in one invocation. Every chunk repeats trusted framing, complete `CHANGED_FILES`, and immutable reviewed-state identity.
+
+Treat chunks as required evidence belonging to one logical roster agent. Validate each bounded output, merge valid findings by the schema-specific rules, and report global valid/required chunk counts. Independent chunk findings are not semantic synthesis: until a package-defined bounded synthesis protocol exists, any logical agent requiring multiple chunks remains incomplete even when all transport chunks returned. Missing, over-budget, unavailable, or unsynthesized evidence produces `incomplete` unless another valid chunk has a configured blocker, in which case the aggregate remains `blocked` with an incomplete-evidence warning. Only semantically complete logical-agent results are eligible for caching or readiness.
+
 ## Cache keys and iterations
 
 The package-owned effective iteration limit is always three. Configuration validation
@@ -93,6 +104,8 @@ Use empty strings for non-applicable remote fields. Never omit required names. C
 
 For a language agent, `agent_prompt_hash` covers the exact effective base prompt plus enabled rule fragments in canonical declared order. The existing `config_hash` covers the complete trusted configuration. `blocking_policy` stores the normalized effective policy used for that agent's current aggregation (`HIGH`, `MEDIUM`, and/or `LOW` for H/M/L; `fail` for checklist). A configuration, extension declaration, effective policy, or enabled-fragment change therefore invalidates every affected key. The explicit policy field also prevents a cache record from being reclassified under different policy.
 
+`description_hash` is the hash of the exact effective, frame-tag-encoded description bytes propagated to every chunk, including the exact empty value when omitted. `scoped_prompt_hash` is the SHA-256 of canonical JSON containing the ordered hashes of every exact complete chunk prompt and the ordered chunk identities. It therefore commits the cache record to description propagation, one huge file or several huge files, deterministic chunk order, complete-manifest framing, and effective full-review coverage. Package policy and budget-contract changes are covered separately by `orchestrator_hash`.
+
 Build the convergence `scope_key` only from stable request identity:
 
 - every mode: repository identity, mode, and reviewer-focus hash;
@@ -101,9 +114,9 @@ Build the convergence `scope_key` only from stable request identity:
 - base/range: normalized validated selectors and range operator;
 - local: no additional selector.
 
-Exclude base/head revisions, diff and description hashes, untracked identities, bucket coverage, and effective full-review state from `scope_key`; include all changing reviewed content in `reviewed_state_hash`. This keeps one fix/review sequence stable while its reviewed state changes.
+Exclude base/head revisions, diff and description hashes, untracked identities, bucket coverage, and effective full-review state from `scope_key`; include all changing reviewed content in `reviewed_state_hash`. The reviewed-state hash includes the exact effective description hash, accepted diff and untracked identities, and bucket/full-review coverage. The derived chunk plan is excluded to avoid a cycle because every `chunk_id` already commits to `reviewed_state_hash`; ordered chunk identities instead belong to `scoped_prompt_hash`. This keeps one fix/review sequence stable while its reviewed state changes.
 
-Persist one latest record per agent. A record stores the key, classification (`nonblocking`, `blocking`, or `incomplete`), iteration, result body, summary counts, and timestamp. It never stores raw scope input separately. Derive classification from the validated result counts and the manifest's effective `blocking_policy`; do not trust a caller-provided classification. `cache.py store` performs this derivation and rejects an optional asserted classification when it disagrees. Lookup revalidates the result and recomputes classification, so a tampered or stale label makes the cache unavailable rather than changing readiness.
+Persist one latest complete logical-agent record per agent. A record stores the key, classification (`nonblocking`, `blocking`, or `incomplete`), iteration, merged result body, summary counts, and timestamp. It never stores raw scope input, individual chunk prompts, or partial chunk results separately. Derive classification from the validated merged result counts and the manifest's effective `blocking_policy`; do not trust a caller-provided classification. `cache.py store` performs this derivation and rejects an optional asserted classification when it disagrees. Lookup revalidates the merged result and recomputes classification, so a tampered or stale label makes the cache unavailable rather than changing readiness.
 
 The record also stores the validated canonical key manifest, including its sorted dependency identities. On a later invocation, use `cache.py probe` to obtain only a structurally and schema-validated prior manifest, re-hash its dependency paths from the immutable reviewed-head context rather than the caller's checkout, construct the complete candidate key, and use `cache.py lookup` for an exact match. Treat exit code 3 as a miss. Treat corrupt, unreadable, or unwritable cache, including JSON that is not valid UTF-8, as unavailable and run required agents fresh; keep the current invocation's iteration state in memory. Invalid UTF-8 in caller-provided result or key-manifest inputs must produce the same concise `cache error` diagnostic as other unreadable input, without a traceback.
 
@@ -128,7 +141,7 @@ Starting a new sequence resets only its iteration and guard-history flags. It do
 
 ## Final guard
 
-Require the guard when any current convergence sequence used a reused result or ran only targeted agents. Rebuild triggers and prompt frames, disable reuse, and run all currently matching agents. Ensure required large-diff coverage is full. Fresh guard output supersedes prior cached output.
+Require the guard when any current convergence sequence used a reused result or ran only targeted agents. Rebuild triggers, chunk plans, prompt frames, and the complete resource plan; disable reuse; and run every required chunk for all currently matching agents only within the remaining per-review budgets. Ensure required large-diff, prompt-chunk, and semantic coverage are complete. Fresh guard output supersedes prior cached output.
 
 The guard does not advance iteration and is never reported as iteration four. If it
 blocks, persist `blocked` at the current iteration and wait for a changed reviewed state.

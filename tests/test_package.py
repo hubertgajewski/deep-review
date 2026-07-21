@@ -23,6 +23,7 @@ class PackageTests(unittest.TestCase):
             "references/configuration.md",
             "references/orchestration.md",
             "references/output-schemas.md",
+            "references/prompt-budgets.md",
             "references/scope-resolution.md",
             "references/providers/github.md",
             "references/providers/gitlab.md",
@@ -167,6 +168,135 @@ class PackageTests(unittest.TestCase):
         self.assertIn("cannot produce `ready`", orchestration)
         self.assertIn("dispatch: serial fallback", main)
         self.assertIn("Do not run builds, tests, linters", main)
+
+    def test_prompt_budgets_and_chunk_coverage_contract_is_explicit(self) -> None:
+        main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
+        budgets = (SKILL / "references" / "prompt-budgets.md").read_text(encoding="utf-8")
+        schemas = (SKILL / "references" / "output-schemas.md").read_text(encoding="utf-8")
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+
+        constants = {
+            name: int(value)
+            for name, value in re.findall(
+                r"^([A-Z][A-Z0-9_]+) = (\d+)$",
+                budgets,
+                re.MULTILINE,
+            )
+        }
+        self.assertEqual(
+            constants,
+            {
+                "DEFAULT_DESCRIPTION_MAX_CHARS": 12000,
+                "ABSOLUTE_DESCRIPTION_MAX_CHARS": 20000,
+                "PROMPT_MAX_UTF8_BYTES": 120000,
+                "INLINE_PROMPT_MAX_UTF8_BYTES": 96000,
+                "CONTEXT_READ_MAX_UTF8_BYTES": 12000,
+                "CONTEXT_READ_TOTAL_MAX_UTF8_BYTES": 24000,
+                "MAX_CONTEXT_READS_PER_CHUNK": 2,
+                "MAX_MODEL_TURNS_PER_CHUNK_ATTEMPT": 3,
+                "MAX_CHUNKS_PER_AGENT": 32,
+                "MAX_CHUNKS_PER_REVIEW": 128,
+                "MAX_MODEL_CALLS_PER_REVIEW": 256,
+                "MAX_TOTAL_PROMPT_UTF8_BYTES": 12000000,
+                "MAX_CONCURRENT_CHUNKS": 8,
+                "RESULT_MAX_UTF8_BYTES": 12000,
+                "AGGREGATE_RESULT_MAX_UTF8_BYTES": 96000,
+                "CACHE_RECORD_MAX_UTF8_BYTES": 524288,
+            },
+        )
+        self.assertGreater(constants["DEFAULT_DESCRIPTION_MAX_CHARS"], 0)
+        self.assertLessEqual(
+            constants["DEFAULT_DESCRIPTION_MAX_CHARS"],
+            constants["ABSOLUTE_DESCRIPTION_MAX_CHARS"],
+        )
+        self.assertEqual(
+            constants["MAX_MODEL_TURNS_PER_CHUNK_ATTEMPT"],
+            constants["MAX_CONTEXT_READS_PER_CHUNK"] + 1,
+        )
+        self.assertLessEqual(
+            constants["AGGREGATE_RESULT_MAX_UTF8_BYTES"],
+            constants["PROMPT_MAX_UTF8_BYTES"],
+        )
+        for document in (main, config, user_config):
+            self.assertIn("description_max_chars = 12000", document)
+        self.assertIn("never means unlimited", budgets)
+        self.assertIn("cannot increase or disable the absolute maximum", budgets)
+        self.assertIn("before prompt sanitization or construction", budgets)
+        self.assertIn("original", budgets)
+        self.assertIn("effective", budgets)
+        self.assertIn("description-limit: clamped", budgets)
+        self.assertIn("clamped` plus `full", budgets)
+        self.assertIn("clamped` plus `omitted", budgets)
+        self.assertIn("exact UTF-8 bytes placed inside", budgets)
+        self.assertIn("exact UTF-8 bytes propagated", scope)
+
+        self.assertIn("exact model-visible input on every turn", budgets)
+        self.assertIn("initially dispatched inline prompt", budgets)
+        self.assertIn("Before every subsequent model call", budgets)
+        self.assertIn("debit its full byte length from the cumulative review budget", budgets)
+        self.assertIn("cannot meter tool results and complete turn input", budgets)
+        self.assertIn("No consumer configuration may change these limits", budgets)
+        self.assertIn("fixed prompt framing exceeds", budgets)
+        self.assertIn("complete `CHANGED_FILES` manifest", budgets)
+        self.assertIn("immutable base and head identities", budgets)
+        self.assertIn("reviewed_state_hash", budgets)
+        self.assertIn("Before any chunk dispatch, validate the complete review plan", budgets)
+        self.assertIn("fixed-size queue", budgets)
+        self.assertIn("dispatch none of its chunks", budgets)
+        self.assertIn("reserve the worst case of two initial attempt turns", budgets)
+        self.assertIn("Charge every reserved turn at the full `PROMPT_MAX_UTF8_BYTES`", budgets)
+        self.assertIn("repeated conversation, prior model output, transport metadata", budgets)
+        self.assertIn("Before every model call, atomically debit one call", budgets)
+        self.assertIn("Every individual or merged result body", budgets)
+        self.assertIn("deterministic non-model operations", budgets)
+        self.assertIn("must not be interpolated into another model prompt", budgets)
+        self.assertIn("Persistent cache reads and writes", budgets)
+
+        chunk_steps = (
+            "Keep complete file blocks together",
+            "Split an oversized file at existing hunk boundaries",
+            "Split an oversized hunk at diff-line boundaries",
+            "Split a single oversized diff line only at a Unicode-code-point boundary",
+        )
+        positions = [budgets.index(step) for step in chunk_steps]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("greedy first-fit in canonical stream order", budgets)
+        self.assertIn("contiguous, non-overlapping, and gap-free", budgets)
+        self.assertIn("One huge file", orchestration)
+        self.assertIn("Several huge files", orchestration)
+        self.assertIn("Full-review mode uses the same chunker", orchestration)
+        self.assertIn("Normal and high-risk content remains required", orchestration)
+
+        self.assertIn("ordered required chunk manifest", budgets)
+        self.assertIn("Retry only the failed chunk once", budgets)
+        self.assertIn("Partial or semantically incomplete chunk results are not cached", budgets)
+        self.assertIn("scoped_prompt_hash", budgets)
+        self.assertIn("derived chunk plan is excluded to avoid a cycle", orchestration)
+        self.assertIn("ordered chunk identities instead belong to `scoped_prompt_hash`", orchestration)
+        self.assertIn("prompt-coverage: complete", budgets)
+        self.assertIn("prompt-coverage: incomplete", budgets)
+        self.assertIn("never `ready`", budgets)
+        self.assertIn("defines no bounded synthesis protocol", budgets)
+        self.assertIn("more than one chunk is always semantically incomplete", budgets)
+        self.assertIn("unsynthesized multi-chunk result", budgets)
+        self.assertIn("required chunk", schemas)
+
+        workflow_steps = [
+            int(number)
+            for number in re.findall(r"^### (\d+)\.", main, re.MULTILINE)
+        ]
+        self.assertEqual(workflow_steps, list(range(1, 10)))
+        self.assertNotIn("### 4b.", main)
+
+        cache_script = (SKILL / "scripts" / "cache.py").read_text(encoding="utf-8")
+        for name in ("RESULT_MAX_UTF8_BYTES", "CACHE_RECORD_MAX_UTF8_BYTES"):
+            match = re.search(rf"^{name} = ([\d_]+)$", cache_script, re.MULTILINE)
+            self.assertIsNotNone(match)
+            assert match is not None
+            self.assertEqual(int(match.group(1).replace("_", "")), constants[name])
 
     def test_remote_context_and_drift_contracts_are_explicit(self) -> None:
         scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
@@ -367,7 +497,7 @@ class PackageTests(unittest.TestCase):
         self.assertIn("never fall back to a path-based reopen", scope)
         self.assertIn("Primary capture never refers to a snapshot root", scope)
         self.assertIn("anchored to the snapshot-root capability", scope)
-        self.assertIn("never fall back to an ordinary path open", scope)
+        self.assertIn("never fall back to an ordinary or unbounded path open", scope)
         self.assertIn("Primary inputs are never reopened here", scope)
         self.assertIn("Trusted extension references were separately validated", scope)
         self.assertNotIn("file descriptor-relative to an anchored", scope)
