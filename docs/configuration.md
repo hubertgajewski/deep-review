@@ -16,7 +16,7 @@ cache_dir = ".deep-review-cache"
 provider = "auto"
 remote = "origin"
 include_description = true
-description_max_chars = 0
+description_max_chars = 12000
 
 [language_agents]
 disabled = []
@@ -26,6 +26,16 @@ disabled = []
 ```
 
 Configuration is loaded from the trusted committed revision. For local and path reviews, that revision is `HEAD`; an uncommitted policy edit is reviewed as input but cannot control the same review. Malformed, duplicate, or unknown values make the result `incomplete` rather than being guessed or ignored.
+
+## Bound descriptions and reviewer prompts
+
+Remote change descriptions default to at most 12,000 Unicode characters. You may choose another limit up to the package's 20,000-character absolute maximum; larger values are clamped. Legacy `description_max_chars = 0` requests that maximum rather than unlimited propagation. Set `include_description = false` to omit descriptions.
+
+Deep Review reports original and effective description character counts whenever it omits or truncates a description. When a configured limit exceeds the absolute maximum, a separate clamp diagnostic is emitted before the full, omitted, or truncated state, so short and intentionally omitted descriptions remain truthful. Its cache identity uses the exact effective text sent to reviewers, not the oversized original.
+
+Every complete reviewer model turn is limited to 120,000 UTF-8 bytes. Initial inline prompts use at most 96,000 bytes, leaving a metered 24,000-byte reserve for safe context reads. Package-owned ceilings also bound chunks per agent and review, total prompt bytes and model calls, concurrency, result bodies, and persistent cache records. Plans over a ceiling fail closed before dispatch.
+
+When required normal, high-risk, or full-review hunks do not fit one inline prompt, Deep Review deterministically splits them into bounded chunks while repeating the complete changed-file manifest and immutable review identity. Independent chunks can surface blockers but cannot prove relationships across separated hunks. Until a bounded synthesis protocol is defined, a multi-chunk logical reviewer is reported `incomplete` and cannot produce `ready`; a single bounded chunk retains the normal readiness path.
 
 ## Iteration limit
 

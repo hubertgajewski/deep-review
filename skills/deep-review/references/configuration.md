@@ -28,7 +28,7 @@ deny_components = [".env*", "*credential*", "*.key", "*.pem", "*.p12", "*.pfx", 
 provider = "auto"
 remote = "origin"
 include_description = true
-description_max_chars = 0
+description_max_chars = 12000
 
 [large_diff]
 full_review = false
@@ -56,6 +56,8 @@ other non-integer or unsupported values make configuration `incomplete`. In part
 TOML `true` is not the integer `1`. Validate this field before dispatch and never clamp,
 coerce, or silently replace an invalid value. `final_guard` is intentionally not
 configurable and does not count as an iteration.
+
+`description_max_chars` defaults to 12,000 Unicode code points. The package-owned absolute maximum is 20,000; larger configured values are clamped and reported independently from whether the description is full, truncated, or omitted. `0` is retained only as a compatibility request for that package maximum and never means unlimited. Negative or non-integer values are invalid. Apply this limit before prompt construction as defined by [Prompt budgets and coverage](prompt-budgets.md). The package-owned model-input, inline-prompt, context-read, chunk-count, aggregate prompt-byte, model-call, concurrency, result, and cache-record limits are not configurable.
 
 `blocking_levels` accepts only `HIGH`, `MEDIUM`, `LOW`, and `CHECKLIST_FAIL`. `CHECKLIST_FAIL` is the canonical global token for checklist `fail` results; reject unknown values and duplicates.
 

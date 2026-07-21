@@ -110,6 +110,24 @@ class KeyTests(unittest.TestCase):
                     CACHE.sha256_bytes(CACHE.canonical_bytes(changed)), original_key
                 )
 
+    def test_effective_description_and_chunk_plan_invalidate_cache_identity(self) -> None:
+        original = manifest()
+        original["description_hash"] = digest("effective description")
+        original["scoped_prompt_hash"] = digest("chunks:1,2,3")
+        original_key = CACHE.sha256_bytes(CACHE.canonical_bytes(original))
+
+        changed_description = dict(original)
+        changed_description["description_hash"] = digest("different effective description")
+        changed_plan = dict(original)
+        changed_plan["scoped_prompt_hash"] = digest("chunks:1,3,2")
+
+        self.assertNotEqual(
+            CACHE.sha256_bytes(CACHE.canonical_bytes(changed_description)), original_key
+        )
+        self.assertNotEqual(
+            CACHE.sha256_bytes(CACHE.canonical_bytes(changed_plan)), original_key
+        )
+
 
 class ResultValidationTests(unittest.TestCase):
     def test_hml_empty_and_findings(self) -> None:
@@ -175,6 +193,34 @@ class ResultValidationTests(unittest.TestCase):
                         argparse.Namespace(**base, allowed_category=categories)
                     )
 
+    def test_result_body_and_validation_input_have_hard_byte_limits(self) -> None:
+        oversized = "x" * (CACHE.RESULT_MAX_UTF8_BYTES + 1)
+        with self.assertRaisesRegex(CACHE.CacheError, "result body exceeds"):
+            CACHE.validate_result_object(
+                {"body": oversized, "summary": {"high": 0, "medium": 0, "low": 0}},
+                "hml",
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = Path(directory) / "result.txt"
+            result.write_text(oversized, encoding="utf-8")
+            with self.assertRaisesRegex(CACHE.CacheError, "result exceeds"):
+                CACHE.command_validate_result(
+                    argparse.Namespace(schema="hml", file=str(result), allowed_category=[])
+                )
+
+    def test_result_json_rejects_escaped_lone_surrogate_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = Path(directory) / "result.json"
+            result.write_text(
+                '{"body":"findings: none\\nsummary: 0 high / 0 medium / 0 low\\n\\ud800",'
+                '"summary":{"high":0,"medium":0,"low":0}}',
+                encoding="utf-8",
+            )
+            parsed = CACHE.read_json(result)
+            with self.assertRaisesRegex(CACHE.CacheError, "valid Unicode scalar values"):
+                CACHE.validate_result_object(parsed, "hml")
+
     def test_checklist_empty_and_failure(self) -> None:
         passing = "- [pass] tests: focused test exists\nsummary: 1 pass / 0 fail / 0 N/A\nFailures: none.\n"
         self.assertEqual(CACHE.validate_checklist(passing), {"pass": 1, "fail": 0, "N/A": 0})
@@ -229,6 +275,89 @@ class CacheStorageTests(unittest.TestCase):
         self.assertEqual(len(list((self.cache_dir / "agents").glob("code.json"))), 1)
         mode = stat.S_IMODE(path.stat().st_mode)
         self.assertEqual(mode & 0o077, 0)
+
+    def test_atomic_write_uses_exact_measured_utf8_bytes(self) -> None:
+        path = self.cache_dir / "newline-heavy.json"
+        value = {"values": [0] * 70_000}
+        expected = (
+            json.dumps(value, sort_keys=True, ensure_ascii=False, indent=2) + "\n"
+        ).encode("utf-8")
+        self.assertLessEqual(len(expected), CACHE.CACHE_RECORD_MAX_UTF8_BYTES)
+        self.assertGreater(
+            len(expected) + expected.count(b"\n"),
+            CACHE.CACHE_RECORD_MAX_UTF8_BYTES,
+        )
+
+        opened_modes: list[str] = []
+        original_fdopen = CACHE.os.fdopen
+
+        def recording_fdopen(descriptor: int, mode: str):
+            opened_modes.append(mode)
+            return original_fdopen(descriptor, mode)
+
+        with mock.patch.object(CACHE.os, "fdopen", side_effect=recording_fdopen):
+            CACHE.atomic_write(path, value)
+
+        self.assertEqual(opened_modes, ["wb"])
+        self.assertEqual(path.read_bytes(), expected)
+
+    def test_cache_reads_and_writes_reject_oversized_records(self) -> None:
+        read_path = self.cache_dir / "oversized-read.json"
+        read_path.write_text(
+            json.dumps({"value": "x" * CACHE.CACHE_RECORD_MAX_UTF8_BYTES}),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(CACHE.CacheError, "JSON input exceeds"):
+            CACHE.read_json(read_path)
+
+        write_path = self.cache_dir / "oversized-write.json"
+        with self.assertRaisesRegex(CACHE.CacheError, "cache record exceeds"):
+            CACHE.atomic_write(
+                write_path,
+                {"value": "x" * CACHE.CACHE_RECORD_MAX_UTF8_BYTES},
+            )
+        self.assertFalse(write_path.exists())
+
+    def test_store_cli_reports_escaped_lone_surrogate_without_traceback(self) -> None:
+        result_path = self.root / "surrogate-result.json"
+        manifest_path = self.root / "manifest.json"
+        key_manifest = manifest()
+        manifest_path.write_text(json.dumps(key_manifest), encoding="utf-8")
+        result_path.write_text(
+            '{"body":"findings: none\\nsummary: 0 high / 0 medium / 0 low\\n\\ud800",'
+            '"summary":{"high":0,"medium":0,"low":0}}',
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(CACHE_PATH),
+                "store",
+                "--repo-root",
+                str(self.root),
+                "--cache-dir",
+                ".deep-review-cache",
+                "--agent",
+                "code",
+                "--key",
+                CACHE.sha256_bytes(CACHE.canonical_bytes(key_manifest)),
+                "--classification",
+                "nonblocking",
+                "--iteration",
+                "1",
+                "--schema",
+                "hml",
+                "--manifest",
+                str(manifest_path),
+                "--result",
+                str(result_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("cache error: result body must contain valid Unicode", completed.stderr)
+        self.assertNotIn("Traceback", completed.stderr)
 
     def test_store_and_lookup_survive_separate_calls_and_replace_latest(self) -> None:
         result_path = self.root / "result.json"
