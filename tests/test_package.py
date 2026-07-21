@@ -203,6 +203,18 @@ class PackageTests(unittest.TestCase):
         self.assertIn("newly appearing denied path", scope)
         self.assertIn("byte-for-byte", scope)
 
+        path_enumeration = "enumerate entry names and no-follow file metadata"
+        path_preflight = "Run the complete path preflight over every enumerated path"
+        path_binary_read = "reading bytes for binary detection"
+        path_synthetic_hunk = "synthetic hunk"
+        self.assertLess(scope.index(path_enumeration), scope.index(path_preflight))
+        self.assertLess(scope.index(path_preflight), scope.index(path_binary_read))
+        self.assertLess(scope.index(path_preflight), scope.index(path_synthetic_hunk))
+        self.assertIn("descriptor-relative to an anchored repository-root directory descriptor", scope)
+        self.assertIn("post-open metadata to identify the same regular file", scope)
+        self.assertIn("fails the complete atomic path scope", scope)
+        self.assertIn("never fall back to a path-based reopen", scope)
+
         range_metadata = (
             "git diff --name-status -z --find-renames --find-copies-harder "
             "<validated-immutable-range>"
@@ -452,7 +464,7 @@ class PackageTests(unittest.TestCase):
             self.assertIn(rule_id, user_config)
 
         scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
-        self.assertIn("Before every surrounding-context", scope)
+        self.assertIn("Before every primary path-mode body", scope)
         self.assertIn("Reject denied components, traversal", scope)
         self.assertIn("unchanged credential-bearing path", scope)
         self.assertIn("all agents, retries, tracing, and dependency hashes complete", scope)

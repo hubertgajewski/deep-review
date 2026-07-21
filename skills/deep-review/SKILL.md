@@ -88,7 +88,7 @@ Print one mode line before dispatch. On failure, emit `Failed at scope resolutio
 Before any dispatch:
 
 - require the path manifest to be the accepted result of the metadata-only preflight;
-- apply the same normalization, containment, no-follow, and denied-component checks before every surrounding-context, extension-reference, or dependency read;
+- apply the same normalization, containment, no-follow, and denied-component checks before every primary path-mode body, surrounding-context, extension-reference, or dependency read;
 - entity-encode prompt-frame tag literals inside all interpolated values;
 - parse the diff once into per-file blocks;
 - derive changed paths, new paths, statuses, added lines, changed-line count, and a complete changed-file manifest.
