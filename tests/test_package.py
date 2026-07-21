@@ -226,6 +226,8 @@ class PackageTests(unittest.TestCase):
         self.assertIn("fixed-size queue", budgets)
         self.assertIn("dispatch none of its chunks", budgets)
         self.assertIn("reserve the worst case of two initial attempt turns", budgets)
+        self.assertIn("Charge every reserved turn at the full `PROMPT_MAX_UTF8_BYTES`", budgets)
+        self.assertIn("repeated conversation, prior model output, transport metadata", budgets)
         self.assertIn("Before every model call, atomically debit one call", budgets)
         self.assertIn("Every individual or merged result body", budgets)
         self.assertIn("deterministic non-model operations", budgets)
