@@ -17,14 +17,17 @@ Trim the raw argument once. Preserve values as strings and pass them to tools on
 1. Explicit `--github-pr N`, `--gitlab-mr N`, or `--provider P --change N`
 2. Explicit `--base REF`, `--range LEFT..RIGHT`, or `--path PATH`
 3. Empty arguments
-4. `^!([1-9]\d*)(\s+(.+))?$` GitLab merge-request shorthand
-5. `^#?([1-9]\d*)(\s+(.+))?$` provider-inferred remote-number shorthand
-6. Any other selector beginning with `!`, or matching `^\S+![1-9]\d*(\s+.*)?$`, is invalid GitLab shorthand
-7. Existing repository-contained path
-8. Valid Git ref or two-sided range
-9. Freeform reviewer focus over local mode
+4. `^!(\d+)(\s+(.+))?$` GitLab merge-request shorthand
+5. `^#?(\d+)(\s+(.+))?$` provider-inferred remote-number shorthand
+6. Any other selector beginning with `#` is invalid provider-inferred shorthand
+7. Any other selector beginning with `!`, or matching `^\S+!\d+(\s+.*)?$`, is invalid GitLab shorthand
+8. Existing repository-contained path
+9. Valid Git ref or two-sided range
+10. Freeform reviewer focus over local mode
 
-`!N` is equivalent to explicit `--gitlab-mr N` and sets the provider to GitLab before remote selection. `#N` and bare `N` retain provider inference. Text captured after either numeric shorthand is reviewer focus. Reject `!`, `!abc`, `!-1`, `!0`, compound references such as `group/project!123`, duplicate scope selectors, missing values, unknown options, non-positive or non-numeric change numbers, mixed provider selectors, and duplicate reviewer focus. Never reinterpret invalid `!` shorthand or a compound `owner/project!N` reference as a path, Git ref, or freeform local-review focus.
+`!N` is equivalent to explicit `--gitlab-mr N` and sets the provider to GitLab before remote selection. `#N` and bare `N` retain provider inference. Text captured after either numeric shorthand is reviewer focus. For every remote selector matched by rule 1, 4, or 5, require the change-number digit string to contain at least one non-zero digit before remote resolution; reject all-zero values such as `0`, `00`, `#0`, and `!0` without continuing to path, Git-ref, or freeform-focus rules. Preserve an accepted number as its original string.
+
+Reject `!`, `!abc`, `!-1`, compound references such as `group/project!123`, invalid inferred forms such as `#`, `#abc`, and `#-1`, duplicate scope selectors, missing values, unknown options, non-positive or non-numeric change numbers, mixed provider selectors, and duplicate reviewer focus. Never reinterpret invalid `#` or `!` shorthand or a compound `owner/project!N` reference as a path, Git ref, or freeform local-review focus.
 
 ## Local mode
 

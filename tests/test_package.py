@@ -91,33 +91,46 @@ class PackageTests(unittest.TestCase):
         scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
-        gitlab_pattern = re.compile(r"^!([1-9]\d*)(\s+(.+))?$")
-        inferred_pattern = re.compile(r"^#?([1-9]\d*)(\s+(.+))?$")
+        gitlab_pattern = re.compile(r"^!(\d+)(\s+(.+))?$")
+        inferred_pattern = re.compile(r"^#?(\d+)(\s+(.+))?$")
 
-        self.assertIn(r"^!([1-9]\d*)(\s+(.+))?$", scope)
-        self.assertIn(r"^#?([1-9]\d*)(\s+(.+))?$", scope)
+        self.assertIn(r"^!(\d+)(\s+(.+))?$", scope)
+        self.assertIn(r"^#?(\d+)(\s+(.+))?$", scope)
         self.assertIn("equivalent to explicit `--gitlab-mr N`", scope)
         self.assertIn("sets the provider to GitLab", scope)
         self.assertIn("consider only remotes recognized as that provider", scope)
         self.assertIn("no matching remote exists or more than one remains", scope)
-        self.assertIn("Never reinterpret invalid `!` shorthand", scope)
-        self.assertIn(r"^\S+![1-9]\d*(\s+.*)?$", scope)
+        self.assertIn("Never reinterpret invalid `#` or `!` shorthand", scope)
+        self.assertIn(r"^\S+!\d+(\s+.*)?$", scope)
         self.assertIn("Extract `--focus TEXT` and `--full-review` modifiers before matching", scope)
         self.assertIn("duplicate reviewer focus", scope)
+        self.assertIn("For every remote selector matched by rule 1, 4, or 5", scope)
+        self.assertIn("require the change-number digit string to contain at least one non-zero digit", scope)
+        self.assertIn("without continuing to path, Git-ref, or freeform-focus rules", scope)
 
         self.assertEqual(gitlab_pattern.fullmatch("!123").group(1), "123")
         self.assertEqual(gitlab_pattern.fullmatch("!123 retry behavior").group(3), "retry behavior")
-        for invalid in ("!", "!abc", "!-1", "!0", "group/project!123"):
+        for invalid in ("!", "!abc", "!-1", "group/project!123"):
             self.assertIsNone(gitlab_pattern.fullmatch(invalid), invalid)
-        for compatible in ("123", "#123"):
-            self.assertEqual(inferred_pattern.fullmatch(compatible).group(1), "123")
+        for compatible, number in (("123", "123"), ("#123", "123"), ("001", "001"), ("#001", "001")):
+            self.assertEqual(inferred_pattern.fullmatch(compatible).group(1), number)
+        for invalid_zero in ("0", "00", "#0", "#00", "!0", "!00"):
+            pattern = gitlab_pattern if invalid_zero.startswith("!") else inferred_pattern
+            captured = pattern.fullmatch(invalid_zero).group(1)
+            self.assertFalse(any(digit != "0" for digit in captured), invalid_zero)
 
         for example in (
-            "Use deep-review #123", "Use deep-review !123", "/deep-review !123",
-            "$deep-review !123", "@skills:deep-review !123", "@deep-review !123",
+            "Use deep-review #123", "Use deep-review !123",
+            "/deep-review #123", "/deep-review !123",
+            "$deep-review #123", "$deep-review !123",
+            "@skills:deep-review #123", "@skills:deep-review !123",
+            "@deep-review #123", "@deep-review !123",
         ):
             self.assertIn(example, readme)
             self.assertIn(example, installation)
+        for document in (readme, installation):
+            self.assertIn("`#123` is the familiar GitHub-style reference", document)
+            self.assertIn("`!123` is GitLab merge-request notation", document)
 
     def test_large_diff_and_restricted_environment_contracts_are_explicit(self) -> None:
         main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
