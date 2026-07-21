@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -153,7 +155,11 @@ class PackageTests(unittest.TestCase):
             self.assertIn("base drift: unverified", text)
             self.assertIn("git ls-remote", text)
             self.assertIn("Never substitute local changes", text)
-            self.assertIn("temporary detached worktree", text)
+            self.assertIn("orchestrator-owned safe projection", text)
+            self.assertIn("Validate each path before reading its raw blob", text)
+            self.assertIn("never read denied or link-shaped entries", text)
+            self.assertIn("checkout, worktree, archive, or clean/smudge filters", text)
+            self.assertIn("retained complete logical manifest", text)
             self.assertIn("metadata again", text)
             self.assertIn("retry the complete metadata-object-path-preflight-diff-metadata", text)
             self.assertIn("second mismatch fails scope resolution", text)
@@ -168,8 +174,22 @@ class PackageTests(unittest.TestCase):
 
         github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")
         gitlab = (SKILL / "references" / "providers" / "gitlab.md").read_text(encoding="utf-8")
-        self.assertIn('git diff --find-renames --find-copies-harder "$BASE_SHA...$HEAD_SHA"', github)
-        self.assertIn('git diff --find-renames --find-copies-harder "$BASE_SHA" "$HEAD_SHA"', gitlab)
+        self.assertIn(
+            'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
+            '"$BASE_SHA...$HEAD_SHA"',
+            github,
+        )
+        self.assertIn(
+            'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
+            '"$BASE_SHA" "$HEAD_SHA"',
+            gitlab,
+        )
+        for text in (github, gitlab):
+            self.assertIn("raw Git environment sanitization", text)
+            self.assertIn("retrieve accepted raw blobs", text)
+            self.assertIn("construct normalized hunks internally", text)
+            self.assertIn("Recognize only exact-identity rename/copy relationships", text)
+            self.assertIn("Never request Git similarity detection or content hunks", text)
         self.assertNotIn("gh pr diff", github)
         self.assertNotIn("glab mr diff", gitlab)
 
@@ -196,34 +216,59 @@ class PackageTests(unittest.TestCase):
         self.assertIn("rename/copy source and destination", main)
         self.assertIn("never reduce a mixed scope to an allowed subset", main)
 
-        local_metadata = "git diff --name-status -z --find-renames --find-copies-harder HEAD"
-        local_unstaged_metadata = "git diff --name-status -z --find-renames --find-copies-harder\n"
-        local_content = "Derive the normalized local content diff"
+        local_metadata = (
+            "git diff --no-ext-diff --no-textconv --cached --raw -z --no-renames HEAD"
+        )
+        local_content = "construct tracked hunks and deterministic relationships internally"
         self.assertLess(scope.index(local_metadata), scope.index(local_content))
-        self.assertLess(scope.index(local_unstaged_metadata), scope.index(local_content))
+        self.assertIn("Do not run `git diff HEAD`, `git diff-files`, `git status`", scope)
+        self.assertIn("git ls-files --stage -z", scope)
+        self.assertIn("git ls-files -v -z", scope)
+        self.assertIn("git ls-files --debug -z", scope)
         self.assertIn("git ls-files --others --exclude-standard -z", scope)
-        self.assertIn("newly appearing denied path", scope)
-        self.assertIn("exact stage modes and blob object IDs", scope)
-        self.assertIn("Reject a staged symlink mode", scope)
-        self.assertIn("never materializes a link-shaped intermediate state", scope)
-        self.assertIn("capture every accepted regular tracked path", scope)
-        self.assertIn("exact accepted index entries", scope)
-        self.assertIn("retained exact index object identities", scope)
+        self.assertIn("Reject an exact path collision", scope)
+        self.assertIn("cannot have two owners in the normalized manifest", scope)
+        self.assertIn("newly appearing denied candidate", scope)
+        empty_exit = "If the staged manifest, mutable-candidate set"
+        primary_capture = "Capture every accepted regular mutable candidate"
+        self.assertLess(scope.index(empty_exit), scope.index(primary_capture))
+        self.assertIn("immediately repeat the staged diff, complete index metadata", scope)
+        self.assertIn("stat-cache metadata", scope)
+        self.assertIn("exactly one stage-0 entry", scope)
+        self.assertIn("no stage 1, 2, or 3 entry", scope)
+        self.assertIn("Reject an unmerged index globally", scope)
+        self.assertIn("unstaged gitlink", scope)
+        self.assertIn("complete index metadata and flags", scope)
         self.assertIn("mutable local tracked, local untracked", scope)
-        self.assertIn("Never ask Git to produce local content hunks", scope)
+        self.assertIn("Raw comparison intentionally bypasses clean/smudge", scope)
+        self.assertIn("not racily clean", scope)
+        self.assertIn("never against the caller's mutable working tree", scope)
         self.assertIn("caller's mutable working tree", scope)
+        tracked_snapshot = "Materialize a tracked-only snapshot"
+        untracked_append = "append them to the normalized review diff"
+        self.assertLess(scope.index(tracked_snapshot), scope.index(untracked_append))
+        self.assertIn("Do not place untracked files in this tracked snapshot", scope)
+        self.assertIn("independent synthetic additions", scope)
+        self.assertIn("Assign every untracked path status `A`", scope)
+        self.assertIn("Never run rename or copy detection", scope)
 
         path_enumeration = "enumerate entry names and link-aware file metadata"
         path_preflight = "Run the complete path preflight over every enumerated path"
-        primary_capture = "## Primary input capture"
+        primary_capture_section = "## Primary input capture"
         immutable_context = "## Immutable review context"
         path_binary_read = "perform binary detection"
         path_synthetic_hunk = "construct synthetic hunks"
         self.assertLess(scope.index(path_enumeration), scope.index(path_preflight))
-        self.assertLess(scope.index(path_preflight), scope.index(primary_capture))
-        self.assertLess(scope.index(primary_capture), scope.index(immutable_context))
-        self.assertLess(scope.index(primary_capture), scope.index(path_binary_read, scope.index(primary_capture)))
-        self.assertLess(scope.index(primary_capture), scope.index(path_synthetic_hunk, scope.index(primary_capture)))
+        self.assertLess(scope.index(path_preflight), scope.index(primary_capture_section))
+        self.assertLess(scope.index(primary_capture_section), scope.index(immutable_context))
+        self.assertLess(
+            scope.index(primary_capture_section),
+            scope.index(path_binary_read, scope.index(primary_capture_section)),
+        )
+        self.assertLess(
+            scope.index(primary_capture_section),
+            scope.index(path_synthetic_hunk, scope.index(primary_capture_section)),
+        )
         self.assertIn("accepted local tracked files with unstaged bodies", scope)
         self.assertIn("platform secure-open adapter", scope)
         self.assertIn("anchored to a repository-root capability", scope)
@@ -232,6 +277,8 @@ class PackageTests(unittest.TestCase):
         self.assertIn("reparse points in every path component", scope)
         self.assertIn("fail scope resolution before reading any primary bytes", scope)
         self.assertIn("post-open metadata has the same stable file identity", scope)
+        self.assertIn("reject a file that changed during capture", scope)
+        self.assertIn("before/after `fstat`", scope)
         self.assertIn("fails the complete atomic scope", scope)
         self.assertIn("never fall back to a path-based reopen", scope)
         self.assertIn("Primary capture never refers to a snapshot root", scope)
@@ -242,13 +289,14 @@ class PackageTests(unittest.TestCase):
         self.assertNotIn("file descriptor-relative to an anchored", scope)
 
         range_metadata = (
-            "git diff --name-status -z --find-renames --find-copies-harder "
+            "git diff --no-ext-diff --no-textconv --raw -z --no-renames "
             "<validated-immutable-range>"
         )
-        range_content = "git diff --find-renames --find-copies-harder <validated-immutable-range>"
+        range_content = "Only after every candidate is accepted may the orchestrator retrieve accepted raw blobs"
         self.assertLess(scope.index(range_metadata), scope.index(range_content))
-        self.assertIn("both source and destination", scope)
+        self.assertIn("both endpoints were accepted", scope)
         self.assertIn("malformed, truncated, or unknown status record fails scope resolution", scope)
+        self.assertIn("reject an undecodable path", scope)
         self.assertIn("three-dot range's merge base", scope)
         self.assertIn("Treat the manifest as one atomic scope", scope)
         self.assertIn("before any candidate content reaches tool output or model context", scope)
@@ -260,55 +308,154 @@ class PackageTests(unittest.TestCase):
 
         provider_commands = {
             "github": (
-                'git diff --name-status -z --find-renames --find-copies-harder '
-                '"$BASE_SHA...$HEAD_SHA"',
-                'git diff --find-renames --find-copies-harder "$BASE_SHA...$HEAD_SHA"',
+                'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
+                '"$BASE_SHA...$HEAD_SHA"'
             ),
             "gitlab": (
-                'git diff --name-status -z --find-renames --find-copies-harder '
-                '"$BASE_SHA" "$HEAD_SHA"',
-                'git diff --find-renames --find-copies-harder "$BASE_SHA" "$HEAD_SHA"',
+                'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
+                '"$BASE_SHA" "$HEAD_SHA"'
             ),
         }
-        for provider, (metadata_command, content_command) in provider_commands.items():
+        for provider, metadata_command in provider_commands.items():
             text = (SKILL / "references" / "providers" / f"{provider}.md").read_text(
                 encoding="utf-8"
             )
-            self.assertLess(text.index(metadata_command), text.index(content_command))
-            self.assertIn("including both sides of every rename or copy", text)
+            self.assertLess(text.index(metadata_command), text.index("retrieve accepted raw blobs"))
+            self.assertIn("every endpoint", text)
+            self.assertIn("exact-copy source", text)
             self.assertIn("Any path-preflight rejection terminates immediately", text)
         github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")
         self.assertIn('git merge-base "$BASE_SHA" "$HEAD_SHA"', github)
         self.assertIn("use its tree as the effective diff base", github)
 
         self.assertIn("No trigger, snapshot, prompt, bucket, or dependency hash", orchestration)
-        self.assertIn("before content diff retrieval", orchestration)
+        self.assertIn("before blob retrieval or hunk construction", orchestration)
         self.assertIn("One denied path fails the entire scope", user_config)
         self.assertIn("allowed/denied mixed change", user_config)
 
-    def test_git_preflight_detects_unchanged_copy_sources(self) -> None:
+    def test_git_diff_evidence_disables_external_helpers(self) -> None:
+        scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
+        self.assertIn("## Raw Git diff safety", scope)
+        self.assertIn("--no-ext-diff", scope)
+        self.assertIn("--no-textconv", scope)
+        self.assertIn("--raw -z --no-renames", scope)
+        self.assertIn("diff.renameLimit", scope)
+        self.assertIn("GIT_EXTERNAL_DIFF", scope)
+        self.assertIn("GIT_DIFF_OPTS", scope)
+        self.assertIn("every `GIT_CONFIG_*` entry", scope)
+        self.assertIn("GIT_INDEX_FILE", scope)
+        self.assertIn("GIT_OBJECT_DIRECTORY", scope)
+        self.assertIn("core.fsmonitor=false", scope)
+        self.assertIn("GIT_NO_REPLACE_OBJECTS=1", scope)
+        self.assertIn("GIT_REPLACE_REF_BASE", scope)
+        self.assertIn("never accept Git-produced patch bodies", scope)
+        self.assertIn("similarity scoring reads blob contents", scope)
+        self.assertIn("git ls-tree -r -z --full-tree <effective-base-tree>", scope)
+        self.assertIn("every endpoint is an accepted candidate", scope)
+        self.assertIn("non-exact copies from unchanged sources as additions", scope)
+        self.assertIn("modified renames as delete/add pairs", scope)
+        self.assertIn("package-owned binary detection", scope)
+        self.assertIn("contains no NUL byte and decodes as strict UTF-8", scope)
+        self.assertIn("Never use locale decoding or replacement characters", scope)
+        self.assertIn("three context lines", scope)
+        self.assertIn("explicit no-final-newline marker", scope)
+        self.assertIn("reversible package-owned form", scope)
+        self.assertIn("must not execute helpers", scope)
+        self.assertIn("classify evidence as binary", scope)
+        self.assertIn("never write objects, refs, or index state", scope)
+
+    def test_git_raw_preflight_does_not_run_copy_similarity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repository = Path(directory)
             subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
-            subprocess.run(["git", "config", "user.email", "tests@example.invalid"], cwd=repository, check=True)
-            subprocess.run(["git", "config", "user.name", "Deep Review Tests"], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "tests@example.invalid"],
+                cwd=repository, check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Deep Review Tests"],
+                cwd=repository, check=True,
+            )
             (repository / "source.txt").write_text("copied content\n", encoding="utf-8")
             subprocess.run(["git", "add", "source.txt"], cwd=repository, check=True)
             subprocess.run(["git", "commit", "-qm", "base"], cwd=repository, check=True)
             (repository / "copy.txt").write_text("copied content\n", encoding="utf-8")
             subprocess.run(["git", "add", "copy.txt"], cwd=repository, check=True)
 
-            ordinary = subprocess.run(
-                ["git", "diff", "--name-status", "--find-copies", "HEAD"],
-                cwd=repository, check=True, capture_output=True, text=True,
-            ).stdout
-            harder = subprocess.run(
-                ["git", "diff", "--name-status", "--find-copies-harder", "HEAD"],
-                cwd=repository, check=True, capture_output=True, text=True,
+            raw = subprocess.run(
+                ["git", "diff", "--cached", "--raw", "-z", "--no-renames", "HEAD"],
+                cwd=repository, check=True, capture_output=True,
             ).stdout
 
-            self.assertEqual(ordinary, "A\tcopy.txt\n")
-            self.assertEqual(harder, "C100\tsource.txt\tcopy.txt\n")
+            self.assertIn(b"A\x00copy.txt\x00", raw)
+            self.assertNotIn(b"source.txt", raw)
+            scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
+            self.assertIn("body-free object-ID matching", scope)
+
+    def test_local_raw_preflight_does_not_run_clean_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            marker = repository / "filter-ran"
+            filter_script = repository / "filter_probe.py"
+            filter_script.write_text(
+                "import os, sys\n"
+                "data = sys.stdin.buffer.read()\n"
+                "with open(os.environ['TASK_MARKER'], 'wb') as marker:\n"
+                "    marker.write(data)\n"
+                "sys.stdout.buffer.write(data)\n",
+                encoding="utf-8",
+            )
+            environment = {**os.environ, "TASK_MARKER": str(marker)}
+            subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "tests@example.invalid"],
+                cwd=repository, check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Deep Review Tests"],
+                cwd=repository, check=True,
+            )
+            subprocess.run(
+                [
+                    "git", "config", "filter.probe.clean",
+                    f'"{sys.executable}" "{filter_script}"',
+                ],
+                cwd=repository, check=True,
+            )
+            (repository / ".gitattributes").write_text("*.txt filter=probe\n", encoding="utf-8")
+            (repository / "tracked.txt").write_text("before\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "add", ".gitattributes", "tracked.txt"],
+                cwd=repository, env=environment, check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-qm", "base"], cwd=repository, env=environment, check=True,
+            )
+            marker.unlink(missing_ok=True)
+            (repository / "tracked.txt").write_text("after\n", encoding="utf-8")
+
+            subprocess.run(
+                ["git", "diff", "--name-status", "HEAD"],
+                cwd=repository, env=environment, check=True, capture_output=True,
+            )
+            self.assertTrue(marker.exists(), "control command should demonstrate the filter risk")
+            marker.unlink()
+
+            safe_commands = (
+                [
+                    "git", "diff", "--no-ext-diff", "--no-textconv", "--cached",
+                    "--raw", "-z", "--no-renames", "HEAD",
+                ],
+                ["git", "ls-files", "--stage", "-z"],
+                ["git", "ls-files", "-v", "-z"],
+                ["git", "ls-files", "--debug", "-z"],
+                ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            )
+            for command in safe_commands:
+                subprocess.run(
+                    command, cwd=repository, env=environment, check=True, capture_output=True,
+                )
+                self.assertFalse(marker.exists(), command)
 
     def test_local_path_handling_requires_literal_pathspecs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -337,7 +484,7 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(interpreted, "")
             self.assertIn(f"a/{magic_name}", literal)
             scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
-            self.assertIn("Literal pathspec mode remains mandatory", scope)
+            self.assertIn("Literal pathspec mode is mandatory", scope)
 
     def test_language_rule_catalogs_are_complete_and_unique(self) -> None:
         expected = {

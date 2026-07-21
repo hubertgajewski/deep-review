@@ -90,13 +90,15 @@ Print one mode line before dispatch. On failure, emit `Failed at scope resolutio
 Before any dispatch:
 
 - require the path manifest to be the accepted result of the metadata-only preflight;
-- capture local unstaged tracked bodies, local untracked bodies, and path-mode primary bodies before snapshotting through a platform secure-open adapter anchored to the repository root, rejecting symlink or reparse-point traversal and proving the retained preflight identity; retain local staged content only by its exact index object identity;
+- enumerate changed endpoints with raw, no-rename Git metadata only; sanitize Git's environment, and defer blob reads plus internal rename/copy detection until the complete candidate preflight succeeds;
+- reject unmerged local index entries, derive mutable candidates without Git worktree diff or filters, retain staged content only by exact stage-0 object identity, and capture local tracked, untracked, and path-mode bodies through a platform secure-open adapter anchored to the repository root;
+- derive local tracked hunks from a tracked-only snapshot, then append retained untracked inputs as independent synthetic additions without rename or copy detection;
 - after snapshotting, apply normalization, snapshot containment, link-safe opening, and denied-component checks through the same capability-based contract before every surrounding-context or dependency read;
 - entity-encode prompt-frame tag literals inside all interpolated values;
 - parse the diff once into per-file blocks;
 - derive changed paths, new paths, statuses, added lines, changed-line count, and a complete changed-file manifest.
 
-Cross-check all content-diff path metadata against the accepted preflight manifest and fail on disagreement. This check never authorizes reading a path that was absent from preflight.
+Cross-check every internally normalized diff path against the accepted candidate manifest and fail on disagreement. This check never authorizes reading a path that was absent from preflight.
 
 Never place contributor-controlled text into a shell command. Pass validated values as separately quoted arguments.
 

@@ -49,7 +49,7 @@ For fresh language output, apply the normal H/M/L validator plus the effective r
 
 ## Large diffs
 
-Apply trusted high-risk patterns first, then generated, then low-risk, then normal. Denied components are rejected during metadata-only path preflight, before content diff retrieval and therefore before bucketing. Each path belongs to one bucket.
+Apply trusted high-risk patterns first, then generated, then low-risk, then normal. Denied components are rejected during metadata-only path preflight, before blob retrieval or hunk construction and therefore before bucketing. Each path belongs to one bucket.
 
 Metadata-only placeholders include path, status, bucket, and omitted changed-line count. Effective `full_review = true`, whether set by trusted policy or explicit `--full-review`, disables metadata-only treatment for every required non-generated path. Generated paths may remain metadata-only unless trusted configuration marks them required.
 
