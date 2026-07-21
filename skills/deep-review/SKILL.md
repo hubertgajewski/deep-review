@@ -94,6 +94,7 @@ Before any dispatch:
 - reject unmerged local index entries, derive mutable candidates without Git worktree diff or filters, retain staged content only by exact stage-0 object identity, and capture local tracked, untracked, and path-mode bodies through a platform secure-open adapter anchored to the repository root;
 - derive local tracked hunks from a tracked-only snapshot, then append retained untracked inputs as independent synthetic additions without rename or copy detection;
 - represent immutable and staged gitlinks from raw mode/object metadata without reading or traversing submodules, and reject unstaged gitlinks that cannot be captured safely;
+- for remote scopes, fetch only commit/tree metadata into a quota-bounded isolated blobless store with lazy fetching disabled, then stream preflight-approved blobs by exact object ID under the package body limits;
 - after snapshotting, apply normalization, snapshot containment, link-safe opening, and denied-component checks through the same capability-based contract before every surrounding-context or dependency read;
 - entity-encode prompt-frame tag literals inside all interpolated values;
 - parse the diff once into per-file blocks;

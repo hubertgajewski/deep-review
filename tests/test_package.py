@@ -156,9 +156,8 @@ class PackageTests(unittest.TestCase):
             self.assertIn("git ls-remote", text)
             self.assertIn("Never substitute local changes", text)
             self.assertIn("orchestrator-owned safe projection", text)
-            self.assertIn("Validate each path before reading its raw blob", text)
-            self.assertIn("never read denied or link-shaped entries", text)
-            self.assertIn("checkout, worktree, archive, or clean/smudge filters", text)
+            self.assertIn("shared Remote evidence transport", text)
+            self.assertIn("isolated blobless store", text)
             self.assertIn("retained complete logical manifest", text)
             self.assertIn("metadata again", text)
             self.assertIn("retry the complete metadata-object-path-preflight-diff-metadata", text)
@@ -166,36 +165,22 @@ class PackageTests(unittest.TestCase):
             self.assertIn("verified immutable", text)
             self.assertIn("never use a change-number-based patch", text)
             self.assertIn("git check-ref-format --branch", text)
-            self.assertIn("full object IDs", text)
-            self.assertIn("already fetched and verified", text)
+            self.assertIn("exact-object transport", text)
             self.assertNotIn("when `headRefOid` is absent locally", text)
             self.assertNotIn("when the recorded head SHA is absent locally", text)
         self.assertIn("original and effective character counts", scope)
 
         github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")
         gitlab = (SKILL / "references" / "providers" / "gitlab.md").read_text(encoding="utf-8")
-        self.assertIn(
-            'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
-            '--no-abbrev --ignore-submodules=none '
-            '"$BASE_SHA...$HEAD_SHA"',
-            github,
-        )
-        self.assertIn(
-            'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
-            '--no-abbrev --ignore-submodules=none '
-            '"$BASE_SHA" "$HEAD_SHA"',
-            gitlab,
-        )
+        self.assertIn('verified immutable range `"$BASE_SHA...$HEAD_SHA"`', github)
+        self.assertIn('verified immutable range `"$BASE_SHA" "$HEAD_SHA"`', gitlab)
         for text in (github, gitlab):
-            self.assertIn("raw Git environment sanitization", text)
             self.assertIn("A safety-ceiling failure does the same", text)
-            self.assertIn("retrieve accepted raw blobs", text)
-            self.assertIn("construct normalized hunks internally", text)
-            self.assertIn("mode-compatible exact-identity rename/copy relationships", text)
-            self.assertIn("represent gitlinks from full object IDs", text)
-            self.assertIn("Never request Git similarity detection or content hunks", text)
+            self.assertIn("bounded raw-blob retrieval", text)
         self.assertNotIn("gh pr diff", github)
         self.assertNotIn("glab mr diff", gitlab)
+        self.assertIn("## Remote evidence transport", scope)
+        self.assertIn("Use the raw-diff, relationship, hunk, gitlink", scope)
 
     def test_configuration_safety_contracts_are_explicit(self) -> None:
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
@@ -312,25 +297,16 @@ class PackageTests(unittest.TestCase):
             scope,
         )
 
-        provider_commands = {
-            "github": (
-                'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
-                '--no-abbrev --ignore-submodules=none '
-                '"$BASE_SHA...$HEAD_SHA"'
-            ),
-            "gitlab": (
-                'git diff --no-ext-diff --no-textconv --raw -z --no-renames '
-                '--no-abbrev --ignore-submodules=none '
-                '"$BASE_SHA" "$HEAD_SHA"'
-            ),
+        provider_ranges = {
+            "github": 'verified immutable range `"$BASE_SHA...$HEAD_SHA"`',
+            "gitlab": 'verified immutable range `"$BASE_SHA" "$HEAD_SHA"`',
         }
-        for provider, metadata_command in provider_commands.items():
+        for provider, immutable_range in provider_ranges.items():
             text = (SKILL / "references" / "providers" / f"{provider}.md").read_text(
                 encoding="utf-8"
             )
-            self.assertLess(text.index(metadata_command), text.index("retrieve accepted raw blobs"))
-            self.assertIn("every endpoint", text)
-            self.assertIn("exact-copy source", text)
+            self.assertIn(immutable_range, text)
+            self.assertIn("shared Remote evidence transport", text)
             self.assertIn("Any path-preflight rejection terminates immediately", text)
         github = (SKILL / "references" / "providers" / "github.md").read_text(encoding="utf-8")
         self.assertIn('git merge-base "$BASE_SHA" "$HEAD_SHA"', github)
@@ -357,6 +333,7 @@ class PackageTests(unittest.TestCase):
         self.assertIn("GIT_OBJECT_DIRECTORY", scope)
         self.assertIn("core.fsmonitor=false", scope)
         self.assertIn("GIT_NO_REPLACE_OBJECTS=1", scope)
+        self.assertIn("GIT_NO_LAZY_FETCH=1", scope)
         self.assertIn("GIT_REPLACE_REF_BASE", scope)
         self.assertIn("never accept Git-produced patch bodies", scope)
         self.assertIn("similarity scoring reads blob contents", scope)
@@ -390,6 +367,16 @@ class PackageTests(unittest.TestCase):
             self.assertIn(ceiling, scope)
         self.assertIn("fails the complete atomic scope without prompt construction or caching", scope)
         self.assertIn("makes required context incomplete", scope)
+        for remote_limit in (
+            "64 MiB of compressed input",
+            "256 MiB of expanded commit/tree objects",
+            "320 MiB of isolated-store disk use",
+        ):
+            self.assertIn(remote_limit, scope)
+        self.assertIn("--filter=blob:none", scope)
+        self.assertIn("response includes a blob body", scope)
+        self.assertIn("provider's authenticated raw-blob endpoint", scope)
+        self.assertIn("Verify each completed body's Git object ID", scope)
 
     def test_git_raw_preflight_does_not_run_copy_similarity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
