@@ -57,6 +57,13 @@ A metadata-only required path makes coverage partial and cannot produce `ready`.
 
 ## Cache keys and iterations
 
+The package-owned effective iteration limit is always three. Configuration validation
+must complete before dispatch; only an omitted `max_iterations` field or the TOML integer
+`3` reaches this workflow. Use that same fixed limit for dispatch continuation,
+aggregation denominators, cache records and state transitions, exhausted-sequence
+detection, restart eligibility, and terminal reporting. No consumer value may lower or
+raise it.
+
 Construct one canonical JSON key manifest per agent with:
 
 ```text
@@ -122,4 +129,6 @@ Starting a new sequence resets only its iteration and guard-history flags. It do
 
 Require the guard when any current convergence sequence used a reused result or ran only targeted agents. Rebuild triggers and prompt frames, disable reuse, and run all currently matching agents. Ensure required large-diff coverage is full. Fresh guard output supersedes prior cached output.
 
-The guard does not advance iteration. If it blocks, persist `blocked` and wait for a changed reviewed state. Never loop a guard automatically.
+The guard does not advance iteration and is never reported as iteration four. If it
+blocks, persist `blocked` at the current iteration and wait for a changed reviewed state.
+Never loop a guard automatically.

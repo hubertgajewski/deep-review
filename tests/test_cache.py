@@ -461,6 +461,25 @@ class CacheStorageTests(unittest.TestCase):
             with self.assertRaisesRegex(CACHE.CacheError, "cannot prepare atomic write"):
                 CACHE.atomic_write(target, {"value": 1})
 
+    def test_convergence_state_rejects_iterations_outside_fixed_range(self) -> None:
+        self.assertEqual(CACHE.MAX_ITERATIONS, 3)
+        valid = {
+            "schema_version": CACHE.SCHEMA_VERSION,
+            "scope_key": digest("scope"),
+            "reviewed_state_hash": digest("state"),
+            "iteration": 1,
+            "status": "blocked",
+            "reuse_used": False,
+            "targeted_rerun_used": False,
+            "generation": 1,
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        }
+        for invalid in (-1, 0, 4, True, 1.0, "3"):
+            with self.subTest(iteration=invalid), self.assertRaisesRegex(
+                CACHE.CacheError, "invalid iteration"
+            ):
+                CACHE.validate_state_record({**valid, "iteration": invalid})
+
     def advance_state(
         self,
         reviewed: str,

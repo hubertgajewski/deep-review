@@ -48,7 +48,14 @@ disabled = []
 disabled = []
 ```
 
-`max_iterations` values above 3 are invalid. `final_guard` is intentionally not configurable.
+`max_iterations` is a package-owned compatibility field, not a tunable limit. It may be
+omitted, which selects the default, or set to the TOML integer `3`; these are the only
+accepted forms and both produce the same fixed effective limit of three. Values `0`,
+negative integers, `1`, `2`, integers above `3`, booleans, strings, floats, arrays, and
+other non-integer or unsupported values make configuration `incomplete`. In particular,
+TOML `true` is not the integer `1`. Validate this field before dispatch and never clamp,
+coerce, or silently replace an invalid value. `final_guard` is intentionally not
+configurable and does not count as an iteration.
 
 `blocking_levels` accepts only `HIGH`, `MEDIUM`, `LOW`, and `CHECKLIST_FAIL`. `CHECKLIST_FAIL` is the canonical global token for checklist `fail` results; reject unknown values and duplicates.
 

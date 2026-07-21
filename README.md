@@ -101,7 +101,7 @@ disabled = ["swift"]
 disabled = ["typescript.no-explicit-any", "python.runtime-assert"]
 ```
 
-You can also adjust blocking levels, diff classification, triggers, remote-review settings, and add project-specific reviewers—for example, a COBOL reviewer backed by your own guidelines. See [Configuration](docs/configuration.md) for supported fields, safe extension naming, and examples.
+You can also adjust blocking levels, diff classification, triggers, remote-review settings, and add project-specific reviewers—for example, a COBOL reviewer backed by your own guidelines. The convergence limit remains package-owned and fixed at three changed iterations. See [Configuration](docs/configuration.md) for supported fields, safe extension naming, and examples.
 
 ## Documentation
 
