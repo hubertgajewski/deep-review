@@ -87,6 +87,38 @@ class PackageTests(unittest.TestCase):
         self.assertIn("--expected-generation", orchestration)
         self.assertIn("scope_key", orchestration)
 
+    def test_gitlab_merge_request_shorthand_contract(self) -> None:
+        scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        gitlab_pattern = re.compile(r"^!([1-9]\d*)(\s+(.+))?$")
+        inferred_pattern = re.compile(r"^#?([1-9]\d*)(\s+(.+))?$")
+
+        self.assertIn(r"^!([1-9]\d*)(\s+(.+))?$", scope)
+        self.assertIn(r"^#?([1-9]\d*)(\s+(.+))?$", scope)
+        self.assertIn("equivalent to explicit `--gitlab-mr N`", scope)
+        self.assertIn("sets the provider to GitLab", scope)
+        self.assertIn("consider only remotes recognized as that provider", scope)
+        self.assertIn("no matching remote exists or more than one remains", scope)
+        self.assertIn("Never reinterpret invalid `!` shorthand", scope)
+        self.assertIn(r"^\S+![1-9]\d*(\s+.*)?$", scope)
+        self.assertIn("Extract `--focus TEXT` and `--full-review` modifiers before matching", scope)
+        self.assertIn("duplicate reviewer focus", scope)
+
+        self.assertEqual(gitlab_pattern.fullmatch("!123").group(1), "123")
+        self.assertEqual(gitlab_pattern.fullmatch("!123 retry behavior").group(3), "retry behavior")
+        for invalid in ("!", "!abc", "!-1", "!0", "group/project!123"):
+            self.assertIsNone(gitlab_pattern.fullmatch(invalid), invalid)
+        for compatible in ("123", "#123"):
+            self.assertEqual(inferred_pattern.fullmatch(compatible).group(1), "123")
+
+        for example in (
+            "Use deep-review #123", "Use deep-review !123", "/deep-review !123",
+            "$deep-review !123", "@skills:deep-review !123", "@deep-review !123",
+        ):
+            self.assertIn(example, readme)
+            self.assertIn(example, installation)
+
     def test_large_diff_and_restricted_environment_contracts_are_explicit(self) -> None:
         main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
         orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")

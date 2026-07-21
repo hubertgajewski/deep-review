@@ -12,17 +12,19 @@
 
 ## Argument grammar
 
-Trim the raw argument once. Preserve values as strings and pass them to tools only as separately quoted arguments. Apply the first matching rule:
+Trim the raw argument once. Preserve values as strings and pass them to tools only as separately quoted arguments. Extract `--focus TEXT` and `--full-review` modifiers before matching the remaining selector, without changing selector order. Apply the first matching rule:
 
 1. Explicit `--github-pr N`, `--gitlab-mr N`, or `--provider P --change N`
 2. Explicit `--base REF`, `--range LEFT..RIGHT`, or `--path PATH`
 3. Empty arguments
-4. `^#?(\d+)(\s+(.+))?$` remote-number shorthand
-5. Existing repository-contained path
-6. Valid Git ref or two-sided range
-7. Freeform reviewer focus over local mode
+4. `^!([1-9]\d*)(\s+(.+))?$` GitLab merge-request shorthand
+5. `^#?([1-9]\d*)(\s+(.+))?$` provider-inferred remote-number shorthand
+6. Any other selector beginning with `!`, or matching `^\S+![1-9]\d*(\s+.*)?$`, is invalid GitLab shorthand
+7. Existing repository-contained path
+8. Valid Git ref or two-sided range
+9. Freeform reviewer focus over local mode
 
-Recognize `--focus TEXT` and `--full-review` as modifiers for every mode. Reject duplicate scope selectors, missing values, unknown options, non-numeric change numbers, and mixed provider selectors.
+`!N` is equivalent to explicit `--gitlab-mr N` and sets the provider to GitLab before remote selection. `#N` and bare `N` retain provider inference. Text captured after either numeric shorthand is reviewer focus. Reject `!`, `!abc`, `!-1`, `!0`, compound references such as `group/project!123`, duplicate scope selectors, missing values, unknown options, non-positive or non-numeric change numbers, mixed provider selectors, and duplicate reviewer focus. Never reinterpret invalid `!` shorthand or a compound `owner/project!N` reference as a path, Git ref, or freeform local-review focus.
 
 ## Local mode
 
@@ -39,12 +41,14 @@ Untracked output is paths only; agents may read safe files. If both values are e
 
 Resolve provider in this order:
 
-1. explicit provider selector
+1. explicit provider selector, including provider-specific shorthand
 2. trusted `[remote_review].provider`
 3. configured trusted remote, default `origin`
 4. exactly one recognized provider remote
 
 Recognize HTTPS, SSH URL, and scp-style remotes. GitHub hosts select the GitHub adapter; GitLab hosts select the GitLab adapter. Self-hosted GitLab requires trusted configuration. Multiple plausible providers are an error.
+
+When an explicit option or provider-specific shorthand selects a provider, consider only remotes recognized as that provider. Prefer the configured trusted remote when it matches; otherwise require exactly one matching remote. Fail scope resolution when no matching remote exists or more than one remains. Thus `!123` cannot silently select GitHub or fall back to local review.
 
 Read the matching provider reference and capture its normalized metadata and diff. Never fall back to local mode when authentication, network, CLI, metadata, or diff retrieval fails.
 

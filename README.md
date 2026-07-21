@@ -40,6 +40,24 @@ Invocation syntax depends on the client:
 
 If a client has no documented explicit syntax, name the skill in natural language or select it from the client's skills menu. The scope options below follow whichever invocation form the client supports.
 
+For a numbered remote change, the shortest forms are:
+
+```text
+Use deep-review #123
+Use deep-review !123
+```
+
+`#123` and bare `123` infer GitHub or GitLab from the trusted repository remote. GitLab users can use the familiar `!123` notation to select GitLab explicitly. These are AI-client invocations, not shell commands.
+
+The same GitLab shorthand works with client-specific invocation prefixes:
+
+```text
+/deep-review !123
+$deep-review !123
+@skills:deep-review !123
+@deep-review !123
+```
+
 Common scopes include:
 
 ```text
