@@ -158,6 +158,10 @@ class PackageTests(unittest.TestCase):
             self.assertIn("orchestrator-owned safe projection", text)
             self.assertIn("shared Remote evidence transport", text)
             self.assertIn("isolated blobless store", text)
+            self.assertIn("exact-object streaming capability", text)
+            self.assertIn("status `200`", text)
+            self.assertIn("raw response body only as a byte stream", text)
+            self.assertIn("Reject cross-origin redirects", text)
             self.assertIn("retained complete logical manifest", text)
             self.assertIn("metadata again", text)
             self.assertIn("retry the complete metadata-object-path-preflight-diff-metadata", text)
@@ -174,6 +178,18 @@ class PackageTests(unittest.TestCase):
         gitlab = (SKILL / "references" / "providers" / "gitlab.md").read_text(encoding="utf-8")
         self.assertIn('verified immutable range `"$BASE_SHA...$HEAD_SHA"`', github)
         self.assertIn('verified immutable range `"$BASE_SHA" "$HEAD_SHA"`', gitlab)
+        self.assertIn("GET /repos/{owner}/{repo}/git/blobs/{file_sha}", github)
+        self.assertIn("Accept: application/vnd.github.raw+json", github)
+        self.assertIn(
+            "GET /api/v4/projects/{url-encoded-project}/repository/blobs/{sha}/raw",
+            gitlab,
+        )
+        self.assertIn("diff_refs.start_sha", gitlab)
+        self.assertIn("recorded start SHA", gitlab)
+        self.assertNotIn("\nrefs/heads/", github)
+        self.assertNotIn("\nrefs/heads/", gitlab)
+        self.assertNotIn("\nrefs/pull/", github)
+        self.assertNotIn("\nrefs/merge-requests/", gitlab)
         for text in (github, gitlab):
             self.assertIn("A safety-ceiling failure does the same", text)
             self.assertIn("bounded raw-blob retrieval", text)
@@ -181,6 +197,8 @@ class PackageTests(unittest.TestCase):
         self.assertNotIn("glab mr diff", gitlab)
         self.assertIn("## Remote evidence transport", scope)
         self.assertIn("Use the raw-diff, relationship, hunk, gitlink", scope)
+        self.assertIn("one authenticated exact-object byte stream", scope)
+        self.assertIn("exact-object streaming capability", scope)
 
     def test_configuration_safety_contracts_are_explicit(self) -> None:
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
@@ -194,6 +212,26 @@ class PackageTests(unittest.TestCase):
         self.assertIn("project_checklist = []", config)
         self.assertIn("orchestrator-owned transport metadata", contract)
         self.assertIn("duplicates another extension domain", contract)
+
+    def test_gitlab_start_and_base_identities_remain_distinct(self) -> None:
+        gitlab = (SKILL / "references" / "providers" / "gitlab.md").read_text(
+            encoding="utf-8"
+        )
+        metadata = {
+            "diff_refs": {
+                "start_sha": "1" * 40,
+                "base_sha": "2" * 40,
+                "head_sha": "3" * 40,
+            }
+        }
+        self.assertNotEqual(
+            metadata["diff_refs"]["start_sha"], metadata["diff_refs"]["base_sha"]
+        )
+        self.assertIn("fetched target ref to resolve exactly", gitlab)
+        self.assertIn("first snapshot's `diff_refs.start_sha`", gitlab)
+        self.assertIn("use `base_sha` as the effective diff base", gitlab)
+        self.assertIn("recorded start SHA", gitlab)
+        self.assertIn("`start_sha`, `base_sha`, and `head_sha`", gitlab)
 
     def test_denied_paths_are_preflighted_before_content_in_every_mode(self) -> None:
         main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
