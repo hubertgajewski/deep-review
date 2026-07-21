@@ -9,7 +9,6 @@ Create `.deep-review/config.toml` in the repository being reviewed. Start with o
 ```toml
 version = 1
 large_diff_lines = 3000
-max_iterations = 3
 blocking_levels = ["HIGH", "MEDIUM", "CHECKLIST_FAIL"]
 cache_dir = ".deep-review-cache"
 
@@ -38,6 +37,13 @@ Every complete reviewer model turn is limited to 120,000 UTF-8 bytes. Initial in
 
 When required normal, high-risk, or full-review hunks do not fit one inline prompt, Deep Review deterministically splits them into bounded chunks while repeating the complete changed-file manifest and immutable review identity. Independent chunks can surface blockers but cannot prove relationships across separated hunks. Until a bounded synthesis protocol is defined, a multi-chunk logical reviewer is reported `incomplete` and cannot produce `ready`; a single bounded chunk retains the normal readiness path.
 
+## Iteration limit
+
+The convergence limit is fixed at three changed review iterations. Omit
+`max_iterations`, as above, or set it to the TOML integer `3`. Any other value makes the
+configuration `incomplete`. The final guard is separate and does not count as a fourth
+iteration.
+
 ## Blocking levels
 
 `blocking_levels` controls which global finding severities block readiness. It accepts `HIGH`, `MEDIUM`, `LOW`, and `CHECKLIST_FAIL` without duplicates:
@@ -46,7 +52,7 @@ When required normal, high-risk, or full-review hunks do not fit one inline prom
 blocking_levels = ["HIGH", "CHECKLIST_FAIL"]
 ```
 
-This changes aggregation, not reviewer instructions or severity guidance. A consumer cannot disable the final guard or increase `max_iterations` above 3.
+This changes aggregation, not reviewer instructions or severity guidance. A consumer cannot disable the final guard or change the fixed three-iteration limit.
 
 ## Deny credential-bearing paths
 

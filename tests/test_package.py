@@ -92,6 +92,27 @@ class PackageTests(unittest.TestCase):
         self.assertIn("--expected-generation", orchestration)
         self.assertIn("scope_key", orchestration)
 
+    def test_max_iterations_contract_is_fixed_at_three(self) -> None:
+        main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+
+        self.assertIn("fixed at exactly three", main)
+        self.assertIn("omitted", config)
+        self.assertIn("TOML integer `3`", config)
+        invalid_values = (
+            "Values `0`", "negative integers", "`1`", "`2`", "above `3`",
+            "booleans", "strings", "floats", "arrays",
+        )
+        for invalid in invalid_values:
+            self.assertIn(invalid, config)
+        self.assertIn("before dispatch", config)
+        self.assertIn("aggregation denominators", orchestration)
+        self.assertIn("exhausted-sequence", orchestration)
+        self.assertIn("iterations: <N>/3", main)
+        self.assertIn("does not count as a fourth", user_config)
+
     def test_gitlab_merge_request_shorthand_contract(self) -> None:
         scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

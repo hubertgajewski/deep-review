@@ -68,6 +68,13 @@ Treat chunks as required evidence belonging to one logical roster agent. Validat
 
 ## Cache keys and iterations
 
+The package-owned effective iteration limit is always three. Configuration validation
+must complete before dispatch; only an omitted `max_iterations` field or the TOML integer
+`3` reaches this workflow. Use that same fixed limit for dispatch continuation,
+aggregation denominators, cache records and state transitions, exhausted-sequence
+detection, restart eligibility, and terminal reporting. No consumer value may lower or
+raise it.
+
 Construct one canonical JSON key manifest per agent with:
 
 ```text
@@ -135,4 +142,6 @@ Starting a new sequence resets only its iteration and guard-history flags. It do
 
 Require the guard when any current convergence sequence used a reused result or ran only targeted agents. Rebuild triggers, chunk plans, prompt frames, and the complete resource plan; disable reuse; and run every required chunk for all currently matching agents only within the remaining per-review budgets. Ensure required large-diff, prompt-chunk, and semantic coverage are complete. Fresh guard output supersedes prior cached output.
 
-The guard does not advance iteration. If it blocks, persist `blocked` and wait for a changed reviewed state. Never loop a guard automatically.
+The guard does not advance iteration and is never reported as iteration four. If it
+blocks, persist `blocked` at the current iteration and wait for a changed reviewed state.
+Never loop a guard automatically.

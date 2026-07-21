@@ -48,7 +48,14 @@ disabled = []
 disabled = []
 ```
 
-`max_iterations` values above 3 are invalid. `final_guard` is intentionally not configurable.
+`max_iterations` is a package-owned compatibility field, not a tunable limit. It may be
+omitted, which selects the default, or set to the TOML integer `3`; these are the only
+accepted forms and both produce the same fixed effective limit of three. Values `0`,
+negative integers, `1`, `2`, integers above `3`, booleans, strings, floats, arrays, and
+other non-integer or unsupported values make configuration `incomplete`. In particular,
+TOML `true` is not the integer `1`. Validate this field before dispatch and never clamp,
+coerce, or silently replace an invalid value. `final_guard` is intentionally not
+configurable and does not count as an iteration.
 
 `description_max_chars` defaults to 12,000 Unicode code points. The package-owned absolute maximum is 20,000; larger configured values are clamped and reported independently from whether the description is full, truncated, or omitted. `0` is retained only as a compatibility request for that package maximum and never means unlimited. Negative or non-integer values are invalid. Apply this limit before prompt construction as defined by [Prompt budgets and coverage](prompt-budgets.md). The package-owned model-input, inline-prompt, context-read, chunk-count, aggregate prompt-byte, model-call, concurrency, result, and cache-record limits are not configurable.
 
