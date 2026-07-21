@@ -174,12 +174,15 @@ class PackageTests(unittest.TestCase):
                 "INLINE_PROMPT_MAX_UTF8_BYTES": 96000,
                 "CONTEXT_READ_MAX_UTF8_BYTES": 12000,
                 "CONTEXT_READ_TOTAL_MAX_UTF8_BYTES": 24000,
+                "MAX_CONTEXT_READS_PER_CHUNK": 2,
+                "MAX_MODEL_TURNS_PER_CHUNK_ATTEMPT": 3,
                 "MAX_CHUNKS_PER_AGENT": 32,
                 "MAX_CHUNKS_PER_REVIEW": 128,
                 "MAX_MODEL_CALLS_PER_REVIEW": 256,
                 "MAX_TOTAL_PROMPT_UTF8_BYTES": 12000000,
                 "MAX_CONCURRENT_CHUNKS": 8,
-                "RESULT_MAX_UTF8_BYTES": 262144,
+                "RESULT_MAX_UTF8_BYTES": 12000,
+                "AGGREGATE_RESULT_MAX_UTF8_BYTES": 96000,
                 "CACHE_RECORD_MAX_UTF8_BYTES": 524288,
             },
         )
@@ -187,6 +190,14 @@ class PackageTests(unittest.TestCase):
         self.assertLessEqual(
             constants["DEFAULT_DESCRIPTION_MAX_CHARS"],
             constants["ABSOLUTE_DESCRIPTION_MAX_CHARS"],
+        )
+        self.assertEqual(
+            constants["MAX_MODEL_TURNS_PER_CHUNK_ATTEMPT"],
+            constants["MAX_CONTEXT_READS_PER_CHUNK"] + 1,
+        )
+        self.assertLessEqual(
+            constants["AGGREGATE_RESULT_MAX_UTF8_BYTES"],
+            constants["PROMPT_MAX_UTF8_BYTES"],
         )
         for document in (main, config, user_config):
             self.assertIn("description_max_chars = 12000", document)
@@ -204,6 +215,7 @@ class PackageTests(unittest.TestCase):
         self.assertIn("exact model-visible input on every turn", budgets)
         self.assertIn("initially dispatched inline prompt", budgets)
         self.assertIn("Before every subsequent model call", budgets)
+        self.assertIn("debit its full byte length from the cumulative review budget", budgets)
         self.assertIn("cannot meter tool results and complete turn input", budgets)
         self.assertIn("No consumer configuration may change these limits", budgets)
         self.assertIn("fixed prompt framing exceeds", budgets)
@@ -213,7 +225,11 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Before any chunk dispatch, validate the complete review plan", budgets)
         self.assertIn("fixed-size queue", budgets)
         self.assertIn("dispatch none of its chunks", budgets)
+        self.assertIn("reserve the worst case of two initial attempt turns", budgets)
+        self.assertIn("Before every model call, atomically debit one call", budgets)
         self.assertIn("Every individual or merged result body", budgets)
+        self.assertIn("deterministic non-model operations", budgets)
+        self.assertIn("must not be interpolated into another model prompt", budgets)
         self.assertIn("Persistent cache reads and writes", budgets)
 
         chunk_steps = (

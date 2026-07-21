@@ -36,7 +36,7 @@ CHECK_SUMMARY_RE = re.compile(r"^summary: (\d+) pass / (\d+) fail / (\d+) N/A$")
 CHECK_ITEM_RE = re.compile(r"^- \[(pass|fail|N/A)\] ([^:]+): (.+)$")
 CHECK_FAILURE_RE = re.compile(r"^([1-9]\d*)\. (.+):([1-9]\d*) (.+)$")
 MAX_SCOPE_STATES = 64
-RESULT_MAX_UTF8_BYTES = 262_144
+RESULT_MAX_UTF8_BYTES = 12_000
 CACHE_RECORD_MAX_UTF8_BYTES = 524_288
 _MISSING_JSON = object()
 KEY_FIELDS = {
@@ -112,7 +112,11 @@ def read_json(path: Path, *, missing_ok: bool = False) -> Any:
 
 
 def canonical_bytes(value: Any) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    rendered = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    try:
+        return rendered.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise CacheError("JSON values must contain valid Unicode scalar values") from exc
 
 
 def sha256_bytes(value: bytes) -> str:
@@ -191,7 +195,11 @@ def atomic_write(path: Path, value: Any) -> None:
     if path.parent.is_symlink():
         raise CacheError(f"atomic write parent cannot be a symlink: {path.parent}")
     rendered = json.dumps(value, sort_keys=True, ensure_ascii=False, indent=2) + "\n"
-    if len(rendered.encode("utf-8")) > CACHE_RECORD_MAX_UTF8_BYTES:
+    try:
+        rendered_bytes = rendered.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise CacheError("cache records must contain valid Unicode scalar values") from exc
+    if len(rendered_bytes) > CACHE_RECORD_MAX_UTF8_BYTES:
         raise CacheError(
             f"cache record exceeds the {CACHE_RECORD_MAX_UTF8_BYTES}-byte limit: {path}"
         )
@@ -402,7 +410,11 @@ def validate_result_object(result: Any, schema: str) -> dict[str, int]:
         raise CacheError("result JSON must contain only body and summary")
     if not isinstance(result["body"], str) or not isinstance(result["summary"], dict):
         raise CacheError("result body must be text and summary must be an object")
-    if len(result["body"].encode("utf-8")) > RESULT_MAX_UTF8_BYTES:
+    try:
+        body_size = len(result["body"].encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise CacheError("result body must contain valid Unicode scalar values") from exc
+    if body_size > RESULT_MAX_UTF8_BYTES:
         raise CacheError(f"result body exceeds the {RESULT_MAX_UTF8_BYTES}-byte limit")
     counts = validate_hml(result["body"]) if schema == "hml" else validate_checklist(result["body"])
     if result["summary"] != counts:

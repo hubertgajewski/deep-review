@@ -96,7 +96,7 @@ Use empty strings for non-applicable remote fields. Never omit required names. C
 
 For a language agent, `agent_prompt_hash` covers the exact effective base prompt plus enabled rule fragments in canonical declared order. The existing `config_hash` covers the complete trusted configuration. A configuration change or enabled-fragment change therefore invalidates reuse without another key-manifest field.
 
-`description_hash` is the hash of the exact effective, frame-tag-encoded description bytes propagated to every chunk, including the exact empty value when omitted. `scoped_prompt_hash` is the SHA-256 of canonical JSON containing the ordered hashes of every exact complete chunk prompt and the ordered chunk identities. It therefore commits the cache record to description propagation, one huge file or several huge files, deterministic chunk order, complete-manifest framing, effective full-review coverage, and every package prompt-budget constant.
+`description_hash` is the hash of the exact effective, frame-tag-encoded description bytes propagated to every chunk, including the exact empty value when omitted. `scoped_prompt_hash` is the SHA-256 of canonical JSON containing the ordered hashes of every exact complete chunk prompt and the ordered chunk identities. It therefore commits the cache record to description propagation, one huge file or several huge files, deterministic chunk order, complete-manifest framing, and effective full-review coverage. Package policy and budget-contract changes are covered separately by `orchestrator_hash`.
 
 Build the convergence `scope_key` only from stable request identity:
 

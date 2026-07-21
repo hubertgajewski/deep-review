@@ -177,7 +177,7 @@ status: ready|blocked|incomplete
 iterations: <N>/3
 dispatch: fresh <N> / reused <N> / skipped <N> / unavailable <N>
 large-diff: inactive|partial|full
-prompt-coverage: complete (<valid>/<required> chunks)|incomplete (<valid>/<required> chunks; unavailable <chunks>)
+prompt-coverage: complete (<valid>/<required> chunks)|incomplete (<valid>/<required> chunks; <unavailable chunks or multi-chunk synthesis unavailable>)
 final-guard: yes|no
 ```
 

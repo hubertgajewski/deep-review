@@ -209,6 +209,18 @@ class ResultValidationTests(unittest.TestCase):
                     argparse.Namespace(schema="hml", file=str(result), allowed_category=[])
                 )
 
+    def test_result_json_rejects_escaped_lone_surrogate_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = Path(directory) / "result.json"
+            result.write_text(
+                '{"body":"findings: none\\nsummary: 0 high / 0 medium / 0 low\\n\\ud800",'
+                '"summary":{"high":0,"medium":0,"low":0}}',
+                encoding="utf-8",
+            )
+            parsed = CACHE.read_json(result)
+            with self.assertRaisesRegex(CACHE.CacheError, "valid Unicode scalar values"):
+                CACHE.validate_result_object(parsed, "hml")
+
     def test_checklist_empty_and_failure(self) -> None:
         passing = "- [pass] tests: focused test exists\nsummary: 1 pass / 0 fail / 0 N/A\nFailures: none.\n"
         self.assertEqual(CACHE.validate_checklist(passing), {"pass": 1, "fail": 0, "N/A": 0})
@@ -280,6 +292,47 @@ class CacheStorageTests(unittest.TestCase):
                 {"value": "x" * CACHE.CACHE_RECORD_MAX_UTF8_BYTES},
             )
         self.assertFalse(write_path.exists())
+
+    def test_store_cli_reports_escaped_lone_surrogate_without_traceback(self) -> None:
+        result_path = self.root / "surrogate-result.json"
+        manifest_path = self.root / "manifest.json"
+        key_manifest = manifest()
+        manifest_path.write_text(json.dumps(key_manifest), encoding="utf-8")
+        result_path.write_text(
+            '{"body":"findings: none\\nsummary: 0 high / 0 medium / 0 low\\n\\ud800",'
+            '"summary":{"high":0,"medium":0,"low":0}}',
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(CACHE_PATH),
+                "store",
+                "--repo-root",
+                str(self.root),
+                "--cache-dir",
+                ".deep-review-cache",
+                "--agent",
+                "code",
+                "--key",
+                CACHE.sha256_bytes(CACHE.canonical_bytes(key_manifest)),
+                "--classification",
+                "nonblocking",
+                "--iteration",
+                "1",
+                "--schema",
+                "hml",
+                "--manifest",
+                str(manifest_path),
+                "--result",
+                str(result_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("cache error: result body must contain valid Unicode", completed.stderr)
+        self.assertNotIn("Traceback", completed.stderr)
 
     def test_store_and_lookup_survive_separate_calls_and_replace_latest(self) -> None:
         result_path = self.root / "result.json"

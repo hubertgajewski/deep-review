@@ -11,12 +11,15 @@ PROMPT_MAX_UTF8_BYTES = 120000
 INLINE_PROMPT_MAX_UTF8_BYTES = 96000
 CONTEXT_READ_MAX_UTF8_BYTES = 12000
 CONTEXT_READ_TOTAL_MAX_UTF8_BYTES = 24000
+MAX_CONTEXT_READS_PER_CHUNK = 2
+MAX_MODEL_TURNS_PER_CHUNK_ATTEMPT = 3
 MAX_CHUNKS_PER_AGENT = 32
 MAX_CHUNKS_PER_REVIEW = 128
 MAX_MODEL_CALLS_PER_REVIEW = 256
 MAX_TOTAL_PROMPT_UTF8_BYTES = 12000000
 MAX_CONCURRENT_CHUNKS = 8
-RESULT_MAX_UTF8_BYTES = 262144
+RESULT_MAX_UTF8_BYTES = 12000
+AGGREGATE_RESULT_MAX_UTF8_BYTES = 96000
 CACHE_RECORD_MAX_UTF8_BYTES = 524288
 ```
 
@@ -46,9 +49,9 @@ Entity-encode frame tags in the truncated value, then compute `description_hash`
 
 Prompt planning is per logical agent because trusted bundles and matched diff scopes differ. First construct the exact no-diff envelope. If that envelope is larger than `INLINE_PROMPT_MAX_UTF8_BYTES`, do not dispatch a reduced or malformed prompt: emit `UNAVAILABLE: fixed prompt framing exceeds the package prompt budget` for that logical agent and make the aggregate `incomplete` unless another validated result already blocks.
 
-Route every model-visible surrounding-context read through an orchestrator-owned bounded transport. One returned read may contain at most `CONTEXT_READ_MAX_UTF8_BYTES`, and all returned context bytes for one chunk job may contain at most `CONTEXT_READ_TOTAL_MAX_UTF8_BYTES`. Slice larger files at UTF-8 code-point boundaries and include trusted path and byte-range metadata. Before every subsequent model call, require the exact complete input to remain at or below `PROMPT_MAX_UTF8_BYTES`. If the host cannot meter tool results and complete turn input, or the reviewer cannot obtain required evidence within the reserved budget, mark that chunk unavailable; never expose an ordinary unbounded file-read tool as a fallback.
+Route every model-visible surrounding-context read through an orchestrator-owned bounded transport. One returned read may contain at most `CONTEXT_READ_MAX_UTF8_BYTES`; one logical chunk, across its initial attempt and retry, may make at most `MAX_CONTEXT_READS_PER_CHUNK` reads and receive at most `CONTEXT_READ_TOTAL_MAX_UTF8_BYTES`. An individual attempt uses at most `MAX_MODEL_TURNS_PER_CHUNK_ATTEMPT`: its initial turn plus no more than the remaining permitted follow-up reads. Slice larger files at UTF-8 code-point boundaries and include trusted path and byte-range metadata. Before every subsequent model call, require the exact complete input to remain at or below `PROMPT_MAX_UTF8_BYTES` and debit its full byte length from the cumulative review budget. If the host cannot meter tool results and complete turn input, or the reviewer cannot obtain required evidence within the read, turn, or byte budget, mark that chunk unavailable; never expose an ordinary unbounded file-read tool as a fallback.
 
-Every individual or merged result body is limited to `RESULT_MAX_UTF8_BYTES`. A larger or unmetered result is malformed evidence. Persistent cache reads and writes are limited to `CACHE_RECORD_MAX_UTF8_BYTES`; an oversized record is a cache miss or disables persistence without changing review findings.
+Every individual or merged result body is limited to `RESULT_MAX_UTF8_BYTES`, and validated result bodies across the roster are limited to `AGGREGATE_RESULT_MAX_UTF8_BYTES`. A larger or unmetered result is malformed evidence. Result capture, schema validation, recounting, deduplication, and aggregate-size enforcement are deterministic non-model operations; raw result bodies must not be interpolated into another model prompt. Persistent cache reads and writes are limited to `CACHE_RECORD_MAX_UTF8_BYTES`; an oversized record is a cache miss or disables persistence without changing review findings.
 
 ## Deterministic chunks
 
@@ -63,7 +66,7 @@ Create the smallest ordered chunk sequence whose complete inline prompts fit `IN
 
 Use greedy first-fit in canonical stream order; never reorder content to fill an earlier chunk. Diff payload spans are contiguous, non-overlapping, and gap-free. Transport copies of file or hunk headers used to identify a continuation do not count as covered payload and must be marked `repeated transport context`. Determine chunk count and ordinal width to a fixed point, then measure every final prompt again. A planning inconsistency or over-budget prompt is unavailable evidence, never permission to drop content.
 
-Before any chunk dispatch, validate the complete review plan against every package ceiling: at most `MAX_CHUNKS_PER_AGENT` chunks for one logical agent, `MAX_CHUNKS_PER_REVIEW` chunks across the review, `MAX_MODEL_CALLS_PER_REVIEW` calls including retries and final-guard work, `MAX_TOTAL_PROMPT_UTF8_BYTES` across exact inline prompts, and `MAX_CONCURRENT_CHUNKS` active calls. Dispatch through a fixed-size queue rather than creating one worker per chunk. If the plan exceeds any ceiling, dispatch none of its chunks and report required evidence incomplete. Revalidate remaining call and prompt-byte budgets before a retry or final guard; exhaustion never authorizes partial coverage.
+Before any chunk dispatch, validate the complete review plan against every package ceiling: at most `MAX_CHUNKS_PER_AGENT` chunks for one logical agent, `MAX_CHUNKS_PER_REVIEW` chunks across the review, `MAX_MODEL_CALLS_PER_REVIEW` calls including tool-follow-up turns, retries, and any required final guard, `MAX_TOTAL_PROMPT_UTF8_BYTES` across every complete model-visible input, and `MAX_CONCURRENT_CHUNKS` active calls. For each planned chunk, reserve the worst case of two initial attempt turns plus `MAX_CONTEXT_READS_PER_CHUNK` follow-up turns, while also respecting the per-attempt turn ceiling. Reserve prompt bytes for two measured inline inputs plus the successively accumulated maximum context bytes in those follow-up inputs; reserve the same worst case for a required final guard. Dispatch through a fixed-size queue rather than creating one worker per chunk. If the plan exceeds any ceiling, dispatch none of its chunks and report required evidence incomplete. Before every model call, atomically debit one call and the exact complete input bytes from the reserved and global budgets. Release unused retry or context-turn reservations only after that chunk finishes. Exhaustion never authorizes partial coverage or starves another already admitted chunk.
 
 Every chunk prompt repeats:
 
