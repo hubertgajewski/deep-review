@@ -8,22 +8,20 @@ Fetch the first metadata snapshot:
 gh pr view "$NUMBER" --repo "$REPOSITORY" --json number,title,body,baseRefName,baseRefOid,headRefName,headRefOid,url
 ```
 
-Materialize the exact recorded commits without updating a local branch:
+Validate the base branch before asking the shared Remote evidence transport to fetch metadata for `refs/heads/$BASE_BRANCH` and `refs/pull/$NUMBER/head` into its isolated blobless store:
 
 ```bash
 git check-ref-format --branch "$BASE_BRANCH"
-git fetch --no-tags "$REMOTE" "refs/heads/$BASE_BRANCH"
-git fetch --no-tags "$REMOTE" "refs/pull/$NUMBER/head"
-git cat-file -e "$BASE_SHA^{commit}"
-git cat-file -e "$HEAD_SHA^{commit}"
 ```
 
-Require the pull-request head fetch to resolve exactly to the first snapshot's `headRefOid`. Resolve `git merge-base "$BASE_SHA" "$HEAD_SHA"` to a full commit ID and use its tree as the effective diff base. From the verified immutable commit graph, first enumerate paths with `git diff --name-status -z --find-renames --find-copies-harder "$BASE_SHA...$HEAD_SHA"`. Perform the complete path preflight from the scope contract, including both sides of every rename or copy, before retrieving aggregate content with `git diff --find-renames --find-copies-harder "$BASE_SHA...$HEAD_SHA"`; never use a change-number-based patch as review evidence. Immediately fetch metadata again with the same `gh pr view` command and require `baseRefOid` and `headRefOid` to match the first snapshot. If object materialization, merge-base resolution, diff retrieval, or either identity check fails, discard the scope and retry the complete metadata-object-path-preflight-diff-metadata sequence once. Any path-preflight rejection terminates immediately without content retrieval. A second mismatch fails scope resolution as a concurrently changing pull request. Normalize title, body, branches, identities, and URL from the verified second snapshot.
+Require the fetched head ref to resolve exactly to the first snapshot's `headRefOid`. Resolve `git merge-base "$BASE_SHA" "$HEAD_SHA"` to a full commit ID and use its tree as the effective diff base. Apply the shared Remote evidence transport to the verified immutable range `"$BASE_SHA...$HEAD_SHA"`; never use a change-number-based patch as review evidence. Immediately fetch metadata again with the same `gh pr view` command and require `baseRefOid` and `headRefOid` to match the first snapshot. If metadata materialization, merge-base resolution, bounded raw-blob retrieval, or either identity check fails, discard the scope and retry the complete metadata-object-path-preflight-diff-metadata sequence once. Any path-preflight rejection terminates immediately without content retrieval. A safety-ceiling failure does the same. A second mismatch fails scope resolution as a concurrently changing pull request. Normalize title, body, branches, identities, and URL from the verified second snapshot.
 
 Validate the number as digits, both recorded identities as full object IDs, and the base branch with `git check-ref-format --branch`. Resolve the remote only from trusted configuration. Pass every value as a separately quoted argument; do not interpolate contributor-controlled text into a shell program.
 
 Normalize `body` as the untrusted description, `baseRefOid` as trusted-policy revision, and `headRefOid` as head identity. Three-dot Git diff semantics produce the aggregate pull-request diff from the verified commit graph. Compare the recorded base SHA with the selected remote branch using `git ls-remote <remote> refs/heads/<baseRefName>`. On drift, report `base drift: recorded <SHA> / remote <SHA>` with both full values. If comparison is unavailable, report `base drift: unverified`. Continue reviewing the diff derived from the provider-recorded identities in either case.
 
-For surrounding context, create a temporary detached worktree directly from the already fetched and verified `headRefOid`, then verify the detached `HEAD` equals `headRefOid`. Never inspect the caller's unrelated checkout as remote-head context.
+Build the shared orchestrator-owned safe projection from the verified `headRefOid` tree metadata and exact-object transport. Verify its retained complete logical manifest against `headRefOid`; never inspect the caller's unrelated checkout as remote-head context.
+
+The GitHub adapter's exact-object streaming capability sends `GET /repos/{owner}/{repo}/git/blobs/{file_sha}` with `Accept: application/vnd.github.raw+json` and the authorization credential from the same resolved GitHub session used for metadata. It hands the untouched HTTP response to the shared transport without consuming its body.
 
 Any CLI, auth, metadata, JSON, or diff failure terminates remote scope resolution. Never substitute local changes.

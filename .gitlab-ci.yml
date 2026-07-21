@@ -27,5 +27,8 @@ test:
   image: "$PYTHON_IMAGE"
   interruptible: true
   timeout: 5m
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends git
   script:
     - python -m unittest discover -s tests -v

@@ -50,7 +50,7 @@ For fresh language output, apply the normal H/M/L validator plus the effective r
 
 ## Large diffs
 
-Apply trusted high-risk patterns first, then generated, then low-risk, then normal. Denied components are rejected during metadata-only path preflight, before content diff retrieval and therefore before bucketing. Each path belongs to one bucket.
+Apply trusted high-risk patterns first, then generated, then low-risk, then normal. Denied components are rejected during metadata-only path preflight, before blob retrieval or hunk construction and therefore before bucketing. Each path belongs to one bucket.
 
 Metadata-only placeholders include path, status, bucket, and omitted changed-line count. Effective `full_review = true`, whether set by trusted policy or explicit `--full-review`, disables metadata-only treatment for every required non-generated path. Generated paths may remain metadata-only unless trusted configuration marks them required.
 
@@ -110,7 +110,7 @@ Exclude base/head revisions, diff and description hashes, untracked identities, 
 
 Persist one latest complete logical-agent record per agent. A record stores the key, classification (`nonblocking`, `blocking`, or `incomplete`), iteration, merged result body, summary counts, and timestamp. It never stores raw scope input, individual chunk prompts, or partial chunk results separately.
 
-The record also stores the validated canonical key manifest, including its sorted dependency identities. On a later invocation, use `cache.py probe` to obtain only a structurally and schema-validated prior manifest, re-hash its dependency paths from the immutable reviewed-head context rather than the caller's checkout, construct the complete candidate key, and use `cache.py lookup` for an exact match. Treat exit code 3 as a miss. Treat corrupt, unreadable, or unwritable cache as unavailable and run required agents fresh; keep the current invocation's iteration state in memory.
+The record also stores the validated canonical key manifest, including its sorted dependency identities. On a later invocation, use `cache.py probe` to obtain only a structurally and schema-validated prior manifest, re-hash its dependency paths from the immutable reviewed-head context rather than the caller's checkout, construct the complete candidate key, and use `cache.py lookup` for an exact match. Treat exit code 3 as a miss. Treat corrupt, unreadable, or unwritable cache, including JSON that is not valid UTF-8, as unavailable and run required agents fresh; keep the current invocation's iteration state in memory. Invalid UTF-8 in caller-provided result or key-manifest inputs must produce the same concise `cache error` diagnostic as other unreadable input, without a traceback.
 
 Persist at most 64 records keyed by scope identity, with reviewed-state hash, iteration, generation, last aggregate status, and whether reuse or targeted reruns occurred. `cache.py` serializes each read-modify-write transition under a cross-platform lock. When capacity is reached, evict the least-recently-updated completed record: either `ready` or terminal iteration-3 `blocked`/`incomplete`. Never evict an active iteration-1 or iteration-2 `blocked`/`incomplete` state. If no completed record is evictable, disable persistence for the new scope and keep its state in memory. Pass `--scope-key` to `state-read` when more than one record exists. Rules:
 
