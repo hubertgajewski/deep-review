@@ -390,6 +390,15 @@ class ResultValidationTests(unittest.TestCase):
             CACHE.validate_hml(redacted), {"high": 2, "medium": 0, "low": 0}
         )
 
+    def test_bare_header_names_followed_by_commas_are_not_assignments(self) -> None:
+        raw = (
+            "LOW | authorization,review | src/authorization,notes.txt:12 | "
+            "authorization, then validate; cookie, if present | keep the prose\n"
+            "summary: 0 high / 0 medium / 1 low\n"
+        )
+
+        self.assertEqual(CACHE.redact_result_body(raw, "hml"), raw)
+
     def test_literal_old_private_key_sentinel_text_is_preserved(self) -> None:
         literal = "[INTERNAL PRIVATE KEY REDACTION]"
         raw = (

@@ -44,10 +44,10 @@ PRIVATE_KEY_RE = re.compile(
     re.DOTALL,
 )
 SENSITIVE_HEADER_RE = re.compile(
-    r"((?:\b(?:authorization|(?:set-)?cookie)|"
-    r"['\"](?:authorization|(?:set-)?cookie)['\"]|"
-    r"\[\s*['\"](?:authorization|(?:set-)?cookie)['\"]\s*\])"
-    r"\s*[:,=]\s*)[^\r\n]*",
+    r"((?:\b(?:authorization|(?:set-)?cookie)\s*[:=]\s*|"
+    r"['\"](?:authorization|(?:set-)?cookie)['\"]\s*[:,=]\s*|"
+    r"\[\s*['\"](?:authorization|(?:set-)?cookie)['\"]\s*\]"
+    r"\s*[:=]\s*))[^\r\n]*",
     re.IGNORECASE,
 )
 NAMED_CREDENTIAL_RE = re.compile(
