@@ -92,6 +92,7 @@ description_hash
 orchestrator_hash
 agent_prompt_hash
 config_hash
+blocking_policy: canonical schema-native array
 checklist_hash
 references_hash
 scoped_prompt_hash
@@ -101,7 +102,7 @@ dependencies: sorted path and content-hash pairs
 
 Use empty strings for non-applicable remote fields. Never omit required names. Compute SHA-256 over canonical UTF-8 JSON.
 
-For a language agent, `agent_prompt_hash` covers the exact effective base prompt plus enabled rule fragments in canonical declared order. The existing `config_hash` covers the complete trusted configuration. A configuration change or enabled-fragment change therefore invalidates reuse without another key-manifest field.
+For a language agent, `agent_prompt_hash` covers the exact effective base prompt plus enabled rule fragments in canonical declared order. The existing `config_hash` covers the complete trusted configuration. `blocking_policy` stores the normalized effective policy used for that agent's current aggregation (`HIGH`, `MEDIUM`, and/or `LOW` for H/M/L; `fail` for checklist). A configuration, extension declaration, effective policy, or enabled-fragment change therefore invalidates every affected key. The explicit policy field also prevents a cache record from being reclassified under different policy.
 
 `description_hash` is the hash of the exact effective, frame-tag-encoded description bytes propagated to every chunk, including the exact empty value when omitted. `scoped_prompt_hash` is the SHA-256 of canonical JSON containing the ordered hashes of every exact complete chunk prompt and the ordered chunk identities. It therefore commits the cache record to description propagation, one huge file or several huge files, deterministic chunk order, complete-manifest framing, and effective full-review coverage. Package policy and budget-contract changes are covered separately by `orchestrator_hash`.
 
@@ -115,7 +116,7 @@ Build the convergence `scope_key` only from stable request identity:
 
 Exclude base/head revisions, diff and description hashes, untracked identities, bucket coverage, and effective full-review state from `scope_key`; include all changing reviewed content in `reviewed_state_hash`. The reviewed-state hash includes the exact effective description hash, accepted diff and untracked identities, and bucket/full-review coverage. The derived chunk plan is excluded to avoid a cycle because every `chunk_id` already commits to `reviewed_state_hash`; ordered chunk identities instead belong to `scoped_prompt_hash`. This keeps one fix/review sequence stable while its reviewed state changes.
 
-Persist one latest complete logical-agent record per agent. A record stores the key, classification (`nonblocking`, `blocking`, or `incomplete`), iteration, merged result body, summary counts, and timestamp. It never stores raw scope input, individual chunk prompts, or partial chunk results separately.
+Persist one latest complete logical-agent record per agent. A record stores the key, classification (`nonblocking`, `blocking`, or `incomplete`), iteration, merged result body, summary counts, and timestamp. It never stores raw scope input, individual chunk prompts, or partial chunk results separately. Derive classification from the validated merged result counts and the manifest's effective `blocking_policy`; do not trust a caller-provided classification. `cache.py store` performs this derivation and rejects an optional asserted classification when it disagrees. Lookup revalidates the merged result and recomputes classification, so a tampered or stale label makes the cache unavailable rather than changing readiness.
 
 The record also stores the validated canonical key manifest, including its sorted dependency identities. On a later invocation, use `cache.py probe` to obtain only a structurally and schema-validated prior manifest, re-hash its dependency paths from the immutable reviewed-head context rather than the caller's checkout, construct the complete candidate key, and use `cache.py lookup` for an exact match. Treat exit code 3 as a miss. Treat corrupt, unreadable, or unwritable cache, including JSON that is not valid UTF-8, as unavailable and run required agents fresh; keep the current invocation's iteration state in memory. Invalid UTF-8 in caller-provided result or key-manifest inputs must produce the same concise `cache error` diagnostic as other unreadable input, without a traceback.
 

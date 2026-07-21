@@ -66,6 +66,8 @@ Reject an extension when:
 - its domain duplicates another extension domain;
 - its name or domain equals a built-in agent name or language-rule namespace;
 - `prompt_scope` or `output_schema` is unknown;
-- blocking levels do not belong to its schema;
+- its blocking declaration is missing or null, is not an array of schema-native strings,
+  contains duplicates, mixes global and native tokens, or contains a value that does
+  not belong to its schema;
 - it requests source editing or project-command execution;
 - it attempts to override core safety, iteration, cache, or guard rules.

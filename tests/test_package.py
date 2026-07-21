@@ -365,6 +365,33 @@ class PackageTests(unittest.TestCase):
         self.assertIn("orchestrator-owned transport metadata", contract)
         self.assertIn("duplicates another extension domain", contract)
 
+    def test_effective_blocking_policy_is_consistent_across_contracts(self) -> None:
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        contract = (SKILL / "references" / "agent-contract.md").read_text(encoding="utf-8")
+        output = (SKILL / "references" / "output-schemas.md").read_text(encoding="utf-8")
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(
+            encoding="utf-8"
+        )
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+
+        self.assertIn("For a built-in agent", config)
+        self.assertIn("For a consumer extension, intersect", config)
+        self.assertIn("CHECKLIST_FAIL` to schema-native `fail`", config)
+        self.assertIn("duplicate `blocking` key", config)
+        self.assertIn("blocking_policy: canonical schema-native array", orchestration)
+        self.assertIn("do not trust a caller-provided classification", orchestration)
+        self.assertIn("same effective policy", output)
+        self.assertIn("mixes global and native tokens", contract)
+        self.assertIn("(stricter)", user_config)
+        self.assertIn("(looser)", user_config)
+
+        for path in (SKILL / "references" / "agents").glob("*.md"):
+            text = path.read_text(encoding="utf-8")
+            if "output_schema: hml" in text:
+                self.assertIn("output_schema: hml\nblocking:\n  - HIGH\n  - MEDIUM", text)
+            else:
+                self.assertIn("output_schema: checklist\nblocking:\n  - fail", text)
+
     def test_gitlab_start_and_base_identities_remain_distinct(self) -> None:
         gitlab = (SKILL / "references" / "providers" / "gitlab.md").read_text(
             encoding="utf-8"
