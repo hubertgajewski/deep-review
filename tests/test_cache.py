@@ -369,6 +369,67 @@ class CacheStorageTests(unittest.TestCase):
         with self.assertRaises(CACHE.CacheError):
             CACHE.command_lookup(common)
 
+    def test_invalid_utf8_json_inputs_are_normalized(self) -> None:
+        invalid_bytes = b"\xff\xfe"
+
+        record_path = self.cache_dir / "agents" / "code.json"
+        record_path.parent.mkdir()
+        record_path.write_bytes(invalid_bytes)
+        with self.assertRaisesRegex(CACHE.CacheError, "cannot read valid JSON"):
+            CACHE.command_probe(
+                argparse.Namespace(
+                    repo_root=str(self.root), cache_dir=".deep-review-cache", agent="code"
+                )
+            )
+
+        state_path = self.cache_dir / "state.json"
+        state_path.write_bytes(invalid_bytes)
+        with self.assertRaisesRegex(CACHE.CacheError, "cannot read valid JSON"):
+            CACHE.read_scope_states(state_path)
+
+        manifest_path = self.root / "manifest.json"
+        manifest_path.write_bytes(invalid_bytes)
+        with self.assertRaisesRegex(CACHE.CacheError, "cannot read valid JSON"):
+            CACHE.command_key(argparse.Namespace(manifest=str(manifest_path)))
+
+        manifest_path.write_text(json.dumps(manifest()), encoding="utf-8")
+        result_path = self.root / "result.json"
+        result_path.write_bytes(invalid_bytes)
+        with self.assertRaisesRegex(CACHE.CacheError, "cannot read valid JSON"):
+            CACHE.command_store(
+                argparse.Namespace(
+                    repo_root=str(self.root),
+                    cache_dir=".deep-review-cache",
+                    agent="code",
+                    key=digest("key"),
+                    classification="nonblocking",
+                    iteration=1,
+                    schema="hml",
+                    manifest=str(manifest_path),
+                    result=str(result_path),
+                )
+            )
+
+    def test_invalid_utf8_cli_inputs_report_concise_cache_errors(self) -> None:
+        invalid_path = self.root / "invalid-input"
+        invalid_path.write_bytes(b"\xff\xfe")
+        commands = (
+            ["key", "--manifest", str(invalid_path)],
+            ["validate-result", "--schema", "hml", "--file", str(invalid_path)],
+        )
+        for arguments in commands:
+            with self.subTest(command=arguments[0]):
+                completed = subprocess.run(
+                    [sys.executable, str(CACHE_PATH), *arguments],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual(completed.stdout, "")
+                self.assertTrue(completed.stderr.startswith("cache error: cannot read"))
+                self.assertNotIn("Traceback", completed.stderr)
+
     def test_cache_path_rejects_escape_and_symlink(self) -> None:
         with self.assertRaises(CACHE.CacheError):
             CACHE.safe_cache_dir(str(self.root), "../outside", create=True)
