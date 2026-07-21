@@ -39,7 +39,7 @@ language_agents.disabled = []
 language_rules.disabled = []
 ```
 
-`0` description characters means unlimited. Effective `full_review` is true when either trusted `large_diff.full_review` policy or explicit `--full-review` requests it; a partial pass still requires a distinct effective full-review invocation before readiness. The final guard and three-iteration maximum are safety invariants; consumer configuration cannot disable or increase them.
+`0` description characters means unlimited. Effective `full_review` is true when either trusted `large_diff.full_review` policy or explicit `--full-review` requests it; a partial pass still requires a distinct effective full-review invocation before readiness. The iteration limit is package-owned and fixed at exactly three: `max_iterations` may be omitted or set to the TOML integer `3`, while every other value makes configuration `incomplete` before dispatch. Consumer configuration cannot lower or increase the limit. The final guard is also a safety invariant and does not count as an additional iteration.
 
 ## Roster
 

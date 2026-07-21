@@ -9,7 +9,6 @@ Create `.deep-review/config.toml` in the repository being reviewed. Start with o
 ```toml
 version = 1
 large_diff_lines = 3000
-max_iterations = 3
 blocking_levels = ["HIGH", "MEDIUM", "CHECKLIST_FAIL"]
 cache_dir = ".deep-review-cache"
 
@@ -28,6 +27,13 @@ disabled = []
 
 Configuration is loaded from the trusted committed revision. For local and path reviews, that revision is `HEAD`; an uncommitted policy edit is reviewed as input but cannot control the same review. Malformed, duplicate, or unknown values make the result `incomplete` rather than being guessed or ignored.
 
+## Iteration limit
+
+The convergence limit is fixed at three changed review iterations. Omit
+`max_iterations`, as above, or set it to the TOML integer `3`. Any other value makes the
+configuration `incomplete`. The final guard is separate and does not count as a fourth
+iteration.
+
 ## Blocking levels
 
 `blocking_levels` controls which global finding severities block readiness. It accepts `HIGH`, `MEDIUM`, `LOW`, and `CHECKLIST_FAIL` without duplicates:
@@ -36,7 +42,7 @@ Configuration is loaded from the trusted committed revision. For local and path 
 blocking_levels = ["HIGH", "CHECKLIST_FAIL"]
 ```
 
-This changes aggregation, not reviewer instructions or severity guidance. A consumer cannot disable the final guard or increase `max_iterations` above 3.
+This changes aggregation, not reviewer instructions or severity guidance. A consumer cannot disable the final guard or change the fixed three-iteration limit.
 
 ## Deny credential-bearing paths
 

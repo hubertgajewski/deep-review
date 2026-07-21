@@ -36,6 +36,7 @@ CHECK_SUMMARY_RE = re.compile(r"^summary: (\d+) pass / (\d+) fail / (\d+) N/A$")
 CHECK_ITEM_RE = re.compile(r"^- \[(pass|fail|N/A)\] ([^:]+): (.+)$")
 CHECK_FAILURE_RE = re.compile(r"^([1-9]\d*)\. (.+):([1-9]\d*) (.+)$")
 MAX_SCOPE_STATES = 64
+MAX_ITERATIONS = 3
 _MISSING_JSON = object()
 KEY_FIELDS = {
     "schema_version",
@@ -413,8 +414,12 @@ def command_validate_result(args: argparse.Namespace) -> None:
 def command_store(args: argparse.Namespace) -> None:
     validate_agent(args.agent)
     validate_hash(args.key, "key")
-    if not 1 <= args.iteration <= 3:
-        raise CacheError("iteration must be between 1 and 3")
+    if (
+        isinstance(args.iteration, bool)
+        or not isinstance(args.iteration, int)
+        or not 1 <= args.iteration <= MAX_ITERATIONS
+    ):
+        raise CacheError(f"iteration must be between 1 and {MAX_ITERATIONS}")
     result = read_json(Path(args.result))
     validate_result_object(result, args.schema)
     manifest = validate_key_manifest(read_json(Path(args.manifest)))
@@ -450,7 +455,11 @@ def validate_cached_record(record: Any, expected_agent: str) -> dict[str, Any]:
     validate_hash(record["key"], "cached key")
     if record["classification"] not in {"nonblocking", "blocking", "incomplete"}:
         raise CacheError("cached agent record has invalid classification")
-    if not isinstance(record["iteration"], int) or not 1 <= record["iteration"] <= 3:
+    if (
+        isinstance(record["iteration"], bool)
+        or not isinstance(record["iteration"], int)
+        or not 1 <= record["iteration"] <= MAX_ITERATIONS
+    ):
         raise CacheError("cached agent record has invalid iteration")
     if record["schema"] not in {"hml", "checklist"}:
         raise CacheError("cached agent record has invalid schema")
@@ -501,7 +510,11 @@ def validate_state_record(value: Any) -> dict[str, Any]:
         raise CacheError("cached convergence state has unsupported schema")
     validate_hash(value["scope_key"], "cached scope_key")
     validate_hash(value["reviewed_state_hash"], "cached reviewed_state_hash")
-    if not isinstance(value["iteration"], int) or not 1 <= value["iteration"] <= 3:
+    if (
+        isinstance(value["iteration"], bool)
+        or not isinstance(value["iteration"], int)
+        or not 1 <= value["iteration"] <= MAX_ITERATIONS
+    ):
         raise CacheError("cached convergence state has invalid iteration")
     if not isinstance(value["generation"], int) or value["generation"] < 1:
         raise CacheError("cached convergence state has invalid generation")
@@ -570,12 +583,14 @@ def command_state(args: argparse.Namespace) -> None:
             )
             exhausted_sequence = (
                 prior is not None
-                and prior["iteration"] == 3
+                and prior["iteration"] == MAX_ITERATIONS
                 and prior["status"] in {"blocked", "incomplete"}
             )
             if args.start_new_sequence:
                 if not exhausted_sequence:
-                    raise CacheError("new sequence requires a terminal iteration-3 review")
+                    raise CacheError(
+                        f"new sequence requires a terminal iteration-{MAX_ITERATIONS} review"
+                    )
                 if not reviewed_state_changed:
                     raise CacheError("new sequence requires a changed reviewed state")
             elif exhausted_sequence and reviewed_state_changed:
@@ -593,7 +608,7 @@ def command_state(args: argparse.Namespace) -> None:
                 iteration = prior["iteration"]
             else:
                 iteration = prior["iteration"] + 1
-            if iteration > 3:
+            if iteration > MAX_ITERATIONS:
                 raise CacheError("changed review iteration limit exceeded")
             carry_prior = prior is not None and not new_sequence
             reuse_used = args.reuse_used or (carry_prior and prior["reuse_used"])
@@ -619,7 +634,10 @@ def command_state(args: argparse.Namespace) -> None:
                 item
                 for item in states.items()
                 if item[0] != args.scope_key
-                and (item[1]["status"] == "ready" or item[1]["iteration"] == 3)
+                and (
+                    item[1]["status"] == "ready"
+                    or item[1]["iteration"] == MAX_ITERATIONS
+                )
             ]
             if not evictable:
                 raise CacheError("scope state capacity is exhausted by unfinished reviews")
@@ -706,7 +724,7 @@ def build_parser() -> argparse.ArgumentParser:
     state_parser.add_argument(
         "--start-new-sequence",
         action="store_true",
-        help="start iteration 1 after a changed terminal iteration-3 review",
+        help=f"start iteration 1 after a changed terminal iteration-{MAX_ITERATIONS} review",
     )
     state_parser.add_argument(
         "--expected-generation",
