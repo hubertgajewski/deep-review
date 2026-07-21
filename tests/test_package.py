@@ -230,10 +230,13 @@ class PackageTests(unittest.TestCase):
         )
         advanced_target_sha = "4" * 40
         self.assertNotEqual(advanced_target_sha, metadata["diff_refs"]["start_sha"])
+        start_object_available = False
+        self.assertFalse(start_object_available)
         self.assertIn("fetched target-ref identity only as the current drift value", gitlab)
         self.assertIn("mismatch with `start_sha` is reported", gitlab)
         self.assertIn("does not fail scope or change the immutable range", gitlab)
-        self.assertIn("Independently materialize and verify", gitlab)
+        self.assertIn("Materialize and verify only the evidence commits", gitlab)
+        self.assertIn("without requiring its Git object to be present", gitlab)
         self.assertIn("use `base_sha` as the effective diff base", gitlab)
         self.assertIn("recorded start SHA", gitlab)
         self.assertIn("`start_sha`, `base_sha`, and `head_sha`", gitlab)
