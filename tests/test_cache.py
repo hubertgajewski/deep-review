@@ -309,6 +309,29 @@ class ResultValidationTests(unittest.TestCase):
             CACHE.validate_hml(redacted), {"high": 1, "medium": 0, "low": 0}
         )
 
+    def test_cookie_headers_redact_the_complete_value(self) -> None:
+        session_value = "session-" + "value-123"
+        csrf_value = "csrf-" + "value-456"
+        raw = (
+            "HIGH | credential-exposure | src/auth.py:12 | "
+            f"Cookie: theme=light; session_id={session_value}; csrftoken={csrf_value} | "
+            "remove the request header\n"
+            "HIGH | credential-exposure | src/auth.py:13 | "
+            f"Set-Cookie: session_id={session_value}; Path=/; HttpOnly | "
+            "remove the response header\n"
+            "summary: 2 high / 0 medium / 0 low\n"
+        )
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        self.assertNotIn(session_value, redacted)
+        self.assertNotIn(csrf_value, redacted)
+        self.assertIn(f"Cookie: {CACHE.REDACTION_MARKER}", redacted)
+        self.assertIn(f"Set-Cookie: {CACHE.REDACTION_MARKER}", redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 2, "medium": 0, "low": 0}
+        )
+
     def test_private_key_redaction_restores_a_valid_single_line_finding(self) -> None:
         key_body = "-----BEGIN PRIVATE KEY-----\nQUJDREVGRw==\n-----END PRIVATE KEY-----"
         raw = (
@@ -568,6 +591,70 @@ class CacheStorageTests(unittest.TestCase):
         self.assertNotIn(provider_token.encode("utf-8"), record_path.read_bytes())
         self.assertIn(CACHE.REDACTION_MARKER, output.getvalue())
         self.assertIn(CACHE.REDACTION_MARKER.encode("utf-8"), record_path.read_bytes())
+
+    def test_processed_result_remains_stable_through_store_and_lookup(self) -> None:
+        provider_token = "gh" + "p_" + "E" * 36
+        gitlab_token = "glpat-" + "H" * 20
+        cookie_value = "session-" + "value-789"
+        raw = (
+            "HIGH | credential-exposure | src/auth.py:4 | "
+            f"password=hunter2, Authorization: Bearer {provider_token}, "
+            f"token={gitlab_token}, Cookie: theme=light; session_id={cookie_value} | "
+            "rotate the credentials\n"
+            "summary: 1 high / 0 medium / 0 low\n"
+        )
+        completed = subprocess.run(
+            [sys.executable, str(CACHE_PATH), "process-result", "--schema", "hml"],
+            input=raw,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0)
+        processed = json.loads(completed.stdout)
+        processed_body = processed["body"]
+        self.assertEqual(CACHE.redact_result_body(processed_body, "hml"), processed_body)
+
+        result_path = self.root / "result.json"
+        manifest_path = self.root / "manifest.json"
+        key_manifest = manifest()
+        manifest_path.write_text(json.dumps(key_manifest), encoding="utf-8")
+        result_path.write_text(json.dumps(processed), encoding="utf-8")
+        key = CACHE.sha256_bytes(CACHE.canonical_bytes(key_manifest))
+        common = {
+            "repo_root": str(self.root),
+            "cache_dir": ".deep-review-cache",
+            "agent": "code",
+            "key": key,
+        }
+        with redirect_stdout(io.StringIO()):
+            CACHE.command_store(
+                argparse.Namespace(
+                    **common,
+                    classification="blocking",
+                    iteration=1,
+                    schema="hml",
+                    manifest=str(manifest_path),
+                    result=str(result_path),
+                )
+            )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            CACHE.command_lookup(argparse.Namespace(**common))
+        looked_up = json.loads(output.getvalue())
+
+        self.assertEqual(looked_up["result"]["body"], processed_body)
+        self.assertEqual(
+            looked_up["result"]["body"].count(CACHE.REDACTION_MARKER),
+            processed_body.count(CACHE.REDACTION_MARKER),
+        )
+        for credential in ("hunter2", provider_token, gitlab_token, cookie_value):
+            self.assertNotIn(credential, completed.stdout)
+            self.assertNotIn(credential, output.getvalue())
+            self.assertNotIn(
+                credential.encode("utf-8"),
+                (self.cache_dir / "agents" / "code.json").read_bytes(),
+            )
 
     def test_cache_reads_and_writes_reject_oversized_records(self) -> None:
         read_path = self.cache_dir / "oversized-read.json"

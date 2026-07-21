@@ -36,6 +36,7 @@ HML_SUMMARY_RE = re.compile(r"^summary: (\d+) high / (\d+) medium / (\d+) low$")
 CHECK_SUMMARY_RE = re.compile(r"^summary: (\d+) pass / (\d+) fail / (\d+) N/A$")
 CHECK_ITEM_RE = re.compile(r"^- \[(pass|fail|N/A)\] ([^:]+): (.+)$")
 CHECK_FAILURE_RE = re.compile(r"^([1-9]\d*)\. (.+):([1-9]\d*) (.+)$")
+REDACTION_MARKER = "[REDACTED CREDENTIAL]"
 PRIVATE_KEY_RE = re.compile(
     r"-----BEGIN (?P<label>(?:(?:RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY|"
     r"PGP PRIVATE KEY BLOCK)-----"
@@ -43,17 +44,18 @@ PRIVATE_KEY_RE = re.compile(
     re.DOTALL,
 )
 AUTHORIZATION_RE = re.compile(
-    r"\b(authorization\s*[:=]\s*)(basic|bearer|token)\s+([^\s,;]+)",
+    r"\b(authorization\s*[:=]\s*)(basic|bearer|token)\s+"
+    rf"({re.escape(REDACTION_MARKER)}|[^\s,;]+)",
     re.IGNORECASE,
 )
-COOKIE_HEADER_RE = re.compile(r"\b((?:set-)?cookie\s*:\s*)([^\s,]+)", re.IGNORECASE)
+COOKIE_HEADER_RE = re.compile(r"\b((?:set-)?cookie\s*:\s*)[^\r\n]*", re.IGNORECASE)
 NAMED_CREDENTIAL_RE = re.compile(
     r"\b(?P<name>api[_ -]?key|access[_ -]?key|private[_ -]?key|"
     r"access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|"
     r"password|passwd|pwd|token|secret|cookie)\b"
     r"(?P<separator>\s*[:=]\s*)"
     r"(?:(?P<quote>['\"])(?P<quoted>[^'\"\r\n]+)(?P=quote)|"
-    r"(?P<bare>[^\s,;]+))",
+    rf"(?P<bare>{re.escape(REDACTION_MARKER)}|[^\s,;]+))",
     re.IGNORECASE,
 )
 WELL_KNOWN_CREDENTIAL_RES = (
@@ -100,7 +102,6 @@ SAFE_CREDENTIAL_VALUES = {
     "unsafe",
     "valid",
 }
-REDACTION_MARKER = "[REDACTED CREDENTIAL]"
 MAX_SCOPE_STATES = 64
 RESULT_MAX_UTF8_BYTES = 12_000
 CACHE_RECORD_MAX_UTF8_BYTES = 524_288
