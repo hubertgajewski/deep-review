@@ -26,6 +26,15 @@ def digest(seed: str) -> str:
     return CACHE.sha256_bytes(seed.encode("utf-8"))
 
 
+def expanding_result_body() -> str:
+    return (
+        "HIGH | credential-exposure | src/auth.py:4 | "
+        + "token=z, " * 600
+        + "credentials are exposed | rotate them\n"
+        + "summary: 1 high / 0 medium / 0 low\n"
+    )
+
+
 AUTO_GENERATION = object()
 
 
@@ -332,6 +341,27 @@ class ResultValidationTests(unittest.TestCase):
             CACHE.validate_hml(redacted), {"high": 2, "medium": 0, "low": 0}
         )
 
+    def test_quoted_credentials_allow_opposite_and_escaped_quotes(self) -> None:
+        single_quoted = 'correct "horse" battery'
+        double_quoted = "correct 'horse' battery"
+        escaped_quote = 'escaped \\"quote\\" value'
+        raw = (
+            "HIGH | credential-exposure | src/auth.py:14 | "
+            f"password='{single_quoted}', token=\"{double_quoted}\", "
+            f'secret="{escaped_quote}" | rotate the credentials\n'
+            "summary: 1 high / 0 medium / 0 low\n"
+        )
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for credential in (single_quoted, double_quoted, escaped_quote):
+            self.assertNotIn(credential, redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 3)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 1, "medium": 0, "low": 0}
+        )
+
     def test_private_key_redaction_restores_a_valid_single_line_finding(self) -> None:
         key_body = "-----BEGIN PRIVATE KEY-----\nQUJDREVGRw==\n-----END PRIVATE KEY-----"
         raw = (
@@ -431,6 +461,28 @@ class ResultValidationTests(unittest.TestCase):
                 self.assertEqual(completed.stdout, b"")
                 self.assertIn(expected, completed.stderr)
                 self.assertNotIn(b"Traceback", completed.stderr)
+
+    def test_process_result_rejects_redaction_that_exceeds_the_result_limit(self) -> None:
+        raw = expanding_result_body()
+        self.assertLessEqual(len(raw.encode("utf-8")), CACHE.RESULT_MAX_UTF8_BYTES)
+        self.assertGreater(
+            len(CACHE.redact_result_body(raw, "hml").encode("utf-8")),
+            CACHE.RESULT_MAX_UTF8_BYTES,
+        )
+
+        completed = subprocess.run(
+            [sys.executable, str(CACHE_PATH), "process-result", "--schema", "hml"],
+            input=raw,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(completed.stdout, "")
+        self.assertIn("redacted result body exceeds", completed.stderr)
+        self.assertNotIn("token=z", completed.stderr)
+        self.assertNotIn("Traceback", completed.stderr)
 
     def test_validate_result_command_rejects_invalid_allowed_categories(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -655,6 +707,38 @@ class CacheStorageTests(unittest.TestCase):
                 credential.encode("utf-8"),
                 (self.cache_dir / "agents" / "code.json").read_bytes(),
             )
+
+    def test_store_rejects_redaction_that_exceeds_the_result_limit(self) -> None:
+        raw = expanding_result_body()
+        result_path = self.root / "result.json"
+        manifest_path = self.root / "manifest.json"
+        key_manifest = manifest()
+        manifest_path.write_text(json.dumps(key_manifest), encoding="utf-8")
+        result_path.write_text(
+            json.dumps(
+                {
+                    "body": raw,
+                    "summary": {"high": 1, "medium": 0, "low": 0},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(CACHE.CacheError, "redacted result body exceeds"):
+            CACHE.command_store(
+                argparse.Namespace(
+                    repo_root=str(self.root),
+                    cache_dir=".deep-review-cache",
+                    agent="code",
+                    key=CACHE.sha256_bytes(CACHE.canonical_bytes(key_manifest)),
+                    classification="blocking",
+                    iteration=1,
+                    schema="hml",
+                    manifest=str(manifest_path),
+                    result=str(result_path),
+                )
+            )
+        self.assertFalse((self.cache_dir / "agents" / "code.json").exists())
 
     def test_cache_reads_and_writes_reject_oversized_records(self) -> None:
         read_path = self.cache_dir / "oversized-read.json"

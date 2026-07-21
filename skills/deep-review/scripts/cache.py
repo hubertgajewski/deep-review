@@ -54,7 +54,8 @@ NAMED_CREDENTIAL_RE = re.compile(
     r"access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|"
     r"password|passwd|pwd|token|secret|cookie)\b"
     r"(?P<separator>\s*[:=]\s*)"
-    r"(?:(?P<quote>['\"])(?P<quoted>[^'\"\r\n]+)(?P=quote)|"
+    r'(?:(?P<double_quote>")(?P<double_quoted>(?:\\.|[^"\\\r\n])*)"|'
+    r"(?P<single_quote>')(?P<single_quoted>(?:\\.|[^'\\\r\n])*)'|"
     rf"(?P<bare>{re.escape(REDACTION_MARKER)}|[^\s,;]+))",
     re.IGNORECASE,
 )
@@ -525,8 +526,6 @@ def credential_value_is_placeholder(value: str) -> bool:
     normalized = value.strip().casefold()
     if normalized in SAFE_CREDENTIAL_VALUES or not normalized:
         return True
-    if normalized == REDACTION_MARKER.casefold():
-        return True
     if normalized.startswith("${") and normalized.endswith("}"):
         return True
     if normalized.startswith("<") and normalized.endswith(">"):
@@ -549,10 +548,17 @@ def redact_sensitive_text(text: str) -> str:
         redacted = pattern.sub(REDACTION_MARKER, redacted)
 
     def replace_named(match: re.Match[str]) -> str:
-        value = match.group("quoted") or match.group("bare") or ""
+        if match.group("double_quote") is not None:
+            value = match.group("double_quoted") or ""
+            quote = '"'
+        elif match.group("single_quote") is not None:
+            value = match.group("single_quoted") or ""
+            quote = "'"
+        else:
+            value = match.group("bare") or ""
+            quote = ""
         if credential_value_is_placeholder(value):
             return match.group(0)
-        quote = match.group("quote") or ""
         return (
             f"{match.group('name')}{match.group('separator')}"
             f"{quote}{REDACTION_MARKER}{quote}"
@@ -686,13 +692,9 @@ def sanitize_result_object(
         raise CacheError("result JSON must contain only body and summary")
     if not isinstance(result["body"], str) or not isinstance(result["summary"], dict):
         raise CacheError("result body must be text and summary must be an object")
-    try:
-        body_size = len(result["body"].encode("utf-8"))
-    except UnicodeEncodeError as exc:
-        raise CacheError("result body must contain valid Unicode scalar values") from exc
-    if body_size > RESULT_MAX_UTF8_BYTES:
-        raise CacheError(f"result body exceeds the {RESULT_MAX_UTF8_BYTES}-byte limit")
+    require_bounded_result_body(result["body"], "result body")
     body = redact_result_body(result["body"], schema)
+    require_bounded_result_body(body, "redacted result body")
     counts = validate_hml(body) if schema == "hml" else validate_checklist(body)
     if result["summary"] != counts:
         raise CacheError("result summary object does not match validated body counts")
@@ -702,6 +704,15 @@ def sanitize_result_object(
 def validate_result_object(result: Any, schema: str) -> dict[str, int]:
     _, counts = sanitize_result_object(result, schema)
     return counts
+
+
+def require_bounded_result_body(body: str, label: str) -> None:
+    try:
+        body_size = len(body.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise CacheError(f"{label} must contain valid Unicode scalar values") from exc
+    if body_size > RESULT_MAX_UTF8_BYTES:
+        raise CacheError(f"{label} exceeds the {RESULT_MAX_UTF8_BYTES}-byte limit")
 
 
 def command_hash(args: argparse.Namespace) -> None:
@@ -735,6 +746,7 @@ def command_validate_result(args: argparse.Namespace) -> None:
     text = read_bounded_text(Path(args.file), RESULT_MAX_UTF8_BYTES, "result")
     allowed_categories = validate_allowed_categories(args.schema, args.allowed_category)
     body = redact_result_body(text, args.schema)
+    require_bounded_result_body(body, "redacted result body")
     counts = (
         validate_hml(body, allowed_categories=allowed_categories)
         if args.schema == "hml"
@@ -747,6 +759,7 @@ def command_process_result(args: argparse.Namespace) -> None:
     text = read_bounded_stdin(RESULT_MAX_UTF8_BYTES, "result")
     allowed_categories = validate_allowed_categories(args.schema, args.allowed_category)
     body = redact_result_body(text, args.schema)
+    require_bounded_result_body(body, "redacted result body")
     counts = (
         validate_hml(body, allowed_categories=allowed_categories)
         if args.schema == "hml"
