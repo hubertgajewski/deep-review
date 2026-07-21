@@ -292,6 +292,16 @@ class CacheStorageTests(unittest.TestCase):
 
         record_path = self.cache_dir / "agents" / "code.json"
         tampered = CACHE.read_json(record_path)
+        tampered["iteration"] = True
+        CACHE.atomic_write(record_path, tampered)
+        with self.assertRaisesRegex(CACHE.CacheError, "invalid iteration"):
+            CACHE.command_probe(
+                argparse.Namespace(
+                    repo_root=str(self.root), cache_dir=".deep-review-cache", agent="code"
+                )
+            )
+
+        tampered["iteration"] = 2
         tampered["result"]["body"] = "findings: none\nsummary: 1 high / 0 medium / 0 low\n"
         CACHE.atomic_write(record_path, tampered)
         with self.assertRaises(CACHE.CacheError):
