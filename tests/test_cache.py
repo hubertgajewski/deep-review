@@ -347,6 +347,29 @@ class ResultValidationTests(unittest.TestCase):
             CACHE.validate_hml(redacted), {"high": 5, "medium": 0, "low": 0}
         )
 
+    def test_quoted_and_indexed_header_keys_are_redacted(self) -> None:
+        values = ("json-value", "dict-value", "indexed-auth", "indexed-cookie")
+        evidence = (
+            f'"Authorization": "{values[0]}"',
+            f"'Cookie': '{values[1]}'",
+            f'headers["Authorization"] = "{values[2]}"',
+            f"headers['Cookie'] = '{values[3]}'",
+        )
+        raw = "".join(
+            f"HIGH | credential-exposure | src/auth.py:{line} | {item} | remove it\n"
+            for line, item in enumerate(evidence, 30)
+        ) + "summary: 4 high / 0 medium / 0 low\n"
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for value in values:
+            self.assertNotIn(value, redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 4)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 4, "medium": 0, "low": 0}
+        )
+
     def test_cookie_headers_redact_the_complete_value(self) -> None:
         session_value = "session-" + "value-123"
         csrf_value = "csrf-" + "value-456"
@@ -511,6 +534,40 @@ class ResultValidationTests(unittest.TestCase):
                 self.assertEqual(completed.stdout, "")
                 self.assertIn(expected_error, completed.stderr)
                 self.assertNotIn(provider_token, completed.stderr)
+                self.assertNotIn("Traceback", completed.stderr)
+
+    def test_process_result_rejects_private_keys_in_structural_fields(self) -> None:
+        private_key = (
+            "-----BEGIN PRIVATE KEY-----\n"
+            "QUJDREVGRw==\n"
+            "-----END PRIVATE KEY-----"
+        )
+        cases = (
+            (
+                "hml",
+                f"HIGH | {private_key} | src/auth.py:9 | evidence | fix\n"
+                "summary: 1 high / 0 medium / 0 low\n",
+            ),
+            (
+                "checklist",
+                f"- [pass] {private_key}: evidence\n"
+                "summary: 1 pass / 0 fail / 0 N/A\n"
+                "Failures: none.\n",
+            ),
+        )
+
+        for schema, raw in cases:
+            with self.subTest(schema=schema):
+                completed = subprocess.run(
+                    [sys.executable, str(CACHE_PATH), "process-result", "--schema", schema],
+                    input=raw,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual(completed.stdout, "")
+                self.assertNotIn("QUJDREVGRw==", completed.stderr)
                 self.assertNotIn("Traceback", completed.stderr)
 
     def test_process_result_rejects_invalid_or_oversized_stdin_without_traceback(self) -> None:
