@@ -75,21 +75,32 @@ Find the repository root with `git rev-parse --show-toplevel`. Load policy from 
 
 If `.deep-review/config.toml`, `.deep-review/checklist.md`, or `.deep-review/agents/**` does not exist at the trusted revision, use defaults or skip that extension. Still include changed policy files in the reviewed scope.
 
-### 2. Resolve scope once
+Before reading any trusted extension reference, validate its literal repository-relative path and tree mode against traversal, denied-component, containment, and symlink rules at the trusted revision. Read accepted references directly from that immutable object identity; this policy phase does not use the reviewed-head snapshot.
 
-Follow [Scope resolution](references/scope-resolution.md). Build exactly one normalized scope containing mode, provider metadata when remote, title, base branch, repository identity, trusted base, head identity, immutable context root, diff, changed-file manifest, untracked paths, description, focus, and `full_review`.
+### 2. Resolve scope and preflight paths
+
+Follow [Scope resolution](references/scope-resolution.md). Resolve trusted identities, then perform the complete metadata-only path preflight before retrieving diff hunks, untracked contents, snapshots, or dependency content. Validate every changed path, untracked path, and rename/copy source and destination for traversal, repository containment, symlinks or reparse points, and denied components. A denied path fails the whole scope; never reduce a mixed scope to an allowed subset.
+
+Only after preflight succeeds, build exactly one normalized scope containing mode, provider metadata when remote, title, base branch, repository identity, trusted base, head identity, immutable context root, diff, changed-file manifest, untracked paths, description, focus, and `full_review`.
 
 Print one mode line before dispatch. On failure, emit `Failed at scope resolution: <reason>.` and stop. Never fall back from a requested remote scope to local changes.
 
-### 3. Sanitize and derive
+### 3. Sanitize values and derive content
 
 Before any dispatch:
 
-- reject path traversal and paths outside the repository;
-- remove or fail on configured denied components before reading them;
+- require the path manifest to be the accepted result of the metadata-only preflight;
+- enumerate changed endpoints with raw, no-rename Git metadata using full object IDs and explicit submodule reporting; sanitize Git's environment, enforce the package's path, metadata, body, diff-work, and output ceilings, and defer blob reads plus mode-compatible exact-identity rename/copy detection until the complete candidate preflight succeeds;
+- reject unmerged local index entries, derive mutable candidates without Git worktree diff or filters, retain staged content only by exact stage-0 object identity, and capture local tracked, untracked, and path-mode bodies through a platform secure-open adapter anchored to the repository root;
+- derive local tracked hunks from a tracked-only snapshot, then append retained untracked inputs as independent synthetic additions without rename or copy detection;
+- represent immutable and staged gitlinks from raw mode/object metadata without reading or traversing submodules, and reject unstaged gitlinks that cannot be captured safely;
+- for remote scopes, fetch only commit/tree metadata into a quota-bounded isolated blobless store with lazy fetching disabled, then stream preflight-approved blobs by exact object ID under the package body limits;
+- after snapshotting, apply normalization, snapshot containment, link-safe opening, and denied-component checks through the same capability-based contract before every surrounding-context or dependency read;
 - entity-encode prompt-frame tag literals inside all interpolated values;
 - parse the diff once into per-file blocks;
 - derive changed paths, new paths, statuses, added lines, changed-line count, and a complete changed-file manifest.
+
+Cross-check every internally normalized diff path against the accepted candidate manifest and fail on disagreement. This check never authorizes reading a path that was absent from preflight.
 
 Never place contributor-controlled text into a shell command. Pass validated values as separately quoted arguments.
 
