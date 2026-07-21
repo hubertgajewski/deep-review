@@ -881,6 +881,7 @@ class CacheStorageTests(unittest.TestCase):
                     cache_dir=".deep-review-cache",
                     agent="code",
                     key=key,
+                    classification="blocking",
                     iteration=1,
                     schema="hml",
                     manifest=str(manifest_path),
