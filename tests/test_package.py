@@ -19,6 +19,8 @@ class PackageTests(unittest.TestCase):
             "SKILL.md",
             "agents/openai.yaml",
             "scripts/cache.py",
+            "scripts/process_result.py",
+            "scripts/result_processing.py",
             "references/agent-contract.md",
             "references/configuration.md",
             "references/orchestration.md",
@@ -292,8 +294,14 @@ class PackageTests(unittest.TestCase):
         self.assertNotIn("### 4b.", main)
 
         cache_script = (SKILL / "scripts" / "cache.py").read_text(encoding="utf-8")
-        for name in ("RESULT_MAX_UTF8_BYTES", "CACHE_RECORD_MAX_UTF8_BYTES"):
-            match = re.search(rf"^{name} = ([\d_]+)$", cache_script, re.MULTILINE)
+        result_script = (SKILL / "scripts" / "result_processing.py").read_text(
+            encoding="utf-8"
+        )
+        for name, source in (
+            ("RESULT_MAX_UTF8_BYTES", result_script),
+            ("CACHE_RECORD_MAX_UTF8_BYTES", cache_script),
+        ):
+            match = re.search(rf"^{name} = ([\d_]+)$", source, re.MULTILINE)
             self.assertIsNotNone(match)
             assert match is not None
             self.assertEqual(int(match.group(1).replace("_", "")), constants[name])
@@ -382,6 +390,10 @@ class PackageTests(unittest.TestCase):
         )
         user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
         cache_script = (SKILL / "scripts" / "cache.py").read_text(encoding="utf-8")
+        processor = (SKILL / "scripts" / "process_result.py").read_text(encoding="utf-8")
+        result_processing = (SKILL / "scripts" / "result_processing.py").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("Never reproduce a complete credential", contract)
         self.assertIn("Never quote or partially reproduce", security)
@@ -391,11 +403,14 @@ class PackageTests(unittest.TestCase):
             "without a command argument, log entry, diagnostic, or temporary file",
             budgets,
         )
-        self.assertIn("process-result", skill)
+        self.assertIn("scripts/process_result.py", skill)
         self.assertIn("consumer-extension output", orchestration)
         self.assertIn("not a general-purpose secret scanner", user_config)
         self.assertIn("Do not restore it from an untrusted CI artifact", user_config)
-        self.assertIn('"process-result"', cache_script)
+        self.assertNotIn('"process-result"', cache_script)
+        self.assertIn("from result_processing import", cache_script)
+        self.assertIn("process_result_body", processor)
+        self.assertIn("def process_result_body", result_processing)
 
     def test_effective_blocking_policy_is_consistent_across_contracts(self) -> None:
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")

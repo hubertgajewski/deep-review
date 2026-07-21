@@ -15,11 +15,17 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CACHE_PATH = ROOT / "skills" / "deep-review" / "scripts" / "cache.py"
+SCRIPTS_PATH = ROOT / "skills" / "deep-review" / "scripts"
+CACHE_PATH = SCRIPTS_PATH / "cache.py"
+PROCESS_RESULT_PATH = SCRIPTS_PATH / "process_result.py"
 SPEC = importlib.util.spec_from_file_location("deep_review_cache", CACHE_PATH)
 assert SPEC and SPEC.loader
 CACHE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(CACHE)
+sys.path.insert(0, str(SCRIPTS_PATH))
+try:
+    SPEC.loader.exec_module(CACHE)
+finally:
+    sys.path.remove(str(SCRIPTS_PATH))
 
 
 def digest(seed: str) -> str:
@@ -413,7 +419,7 @@ class ResultValidationTests(unittest.TestCase):
             "LOW | configuration | src/auth.py:45 | "
             "Authorization: ${API_TOKEN}. | keep the placeholder punctuation\n"
             "LOW | configuration | src/auth.py:46 | "
-            "\"Cookie\": \"<secret>\", as documented | keep the placeholder\n"
+            "\"Cookie\": \"[REDACTED]\", as documented | keep the placeholder\n"
             "LOW | configuration | src/auth.java:47 | "
             "setHeader(\"Authorization\", \"[REDACTED]\"); preserve this prose | keep it\n"
             "LOW | configuration | src/auth.go:48 | "
@@ -533,6 +539,34 @@ class ResultValidationTests(unittest.TestCase):
             CACHE.validate_hml(redacted), {"high": 1, "medium": 0, "low": 0}
         )
 
+    def test_unquoted_multiword_and_ambiguous_placeholders_are_fully_redacted(
+        self,
+    ) -> None:
+        credentials = (
+            "correct horse battery staple",
+            "<actual-token>",
+            "[actual-secret]",
+            "$API_KEY hardcoded-suffix",
+        )
+        raw = "".join(
+            f"HIGH | credential-exposure | src/auth.py:{line} | "
+            f"{name}={value} | rotate it\n"
+            for line, (name, value) in enumerate(
+                zip(("password", "token", "secret", "api_key"), credentials),
+                60,
+            )
+        ) + "summary: 4 high / 0 medium / 0 low\n"
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for credential in credentials:
+            self.assertNotIn(credential, redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 4)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 4, "medium": 0, "low": 0}
+        )
+
     def test_private_key_redaction_restores_a_valid_single_line_finding(self) -> None:
         key_body = "-----BEGIN PRIVATE KEY-----\nQUJDREVGRw==\n-----END PRIVATE KEY-----"
         raw = (
@@ -568,7 +602,7 @@ class ResultValidationTests(unittest.TestCase):
     def test_redaction_is_idempotent_and_preserves_false_positive_shaped_values(self) -> None:
         raw = (
             "LOW | configuration | src/token:12 | token_count=4, password_policy=strict, "
-            "token=${API_TOKEN}, secret=<secret>, api_key=[REDACTED], password: hardcoded, "
+            "token=${API_TOKEN}, secret=[REDACTED], api_key=[REDACTED], password: hardcoded, "
             "token: exposed | keep placeholders\n"
             "summary: 0 high / 0 medium / 1 low\n"
         )
@@ -585,7 +619,7 @@ class ResultValidationTests(unittest.TestCase):
             "summary: 1 high / 0 medium / 0 low\n"
         )
         completed = subprocess.run(
-            [sys.executable, str(CACHE_PATH), "process-result", "--schema", "hml"],
+            [sys.executable, str(PROCESS_RESULT_PATH), "--schema", "hml"],
             input=valid,
             check=False,
             capture_output=True,
@@ -599,7 +633,7 @@ class ResultValidationTests(unittest.TestCase):
 
         malformed = f"malformed password={provider_token}\nsummary: 0 high / 0 medium / 0 low\n"
         failed = subprocess.run(
-            [sys.executable, str(CACHE_PATH), "process-result", "--schema", "hml"],
+            [sys.executable, str(PROCESS_RESULT_PATH), "--schema", "hml"],
             input=malformed,
             check=False,
             capture_output=True,
@@ -639,8 +673,7 @@ class ResultValidationTests(unittest.TestCase):
                 completed = subprocess.run(
                     [
                         sys.executable,
-                        str(CACHE_PATH),
-                        "process-result",
+                        str(PROCESS_RESULT_PATH),
                         "--schema",
                         schema,
                     ],
@@ -678,7 +711,7 @@ class ResultValidationTests(unittest.TestCase):
         for schema, raw in cases:
             with self.subTest(schema=schema):
                 completed = subprocess.run(
-                    [sys.executable, str(CACHE_PATH), "process-result", "--schema", schema],
+                    [sys.executable, str(PROCESS_RESULT_PATH), "--schema", schema],
                     input=raw,
                     check=False,
                     capture_output=True,
@@ -698,8 +731,7 @@ class ResultValidationTests(unittest.TestCase):
                 completed = subprocess.run(
                     [
                         sys.executable,
-                        str(CACHE_PATH),
-                        "process-result",
+                        str(PROCESS_RESULT_PATH),
                         "--schema",
                         "hml",
                     ],
@@ -721,7 +753,7 @@ class ResultValidationTests(unittest.TestCase):
         )
 
         completed = subprocess.run(
-            [sys.executable, str(CACHE_PATH), "process-result", "--schema", "hml"],
+            [sys.executable, str(PROCESS_RESULT_PATH), "--schema", "hml"],
             input=raw,
             check=False,
             capture_output=True,
@@ -907,7 +939,7 @@ class CacheStorageTests(unittest.TestCase):
             "summary: 1 high / 0 medium / 0 low\n"
         )
         completed = subprocess.run(
-            [sys.executable, str(CACHE_PATH), "process-result", "--schema", "hml"],
+            [sys.executable, str(PROCESS_RESULT_PATH), "--schema", "hml"],
             input=raw,
             check=False,
             capture_output=True,
