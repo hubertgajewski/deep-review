@@ -4,21 +4,9 @@ Deep Review is a review-only Agent Skill that coordinates specialized reviewers 
 
 Deep Review does not edit consumer source files. A `ready` result means the configured review completed without blockers; it does not claim that builds, tests, or linters passed.
 
-## Install from the Claude community marketplace
-
-After Deep Review is published in Anthropic's community marketplace, add the marketplace and install the plugin:
-
-```text
-/plugin marketplace add anthropics/claude-plugins-community
-/plugin install deep-review@claude-community
-/reload-plugins
-```
-
-The install is user-scoped by default. Use Claude Code's plugin interface when another scope is required.
-
 ## Invoke
 
-The fully qualified marketplace command is:
+When Deep Review is loaded locally as a Claude Code plugin, the fully qualified command is:
 
 ```text
 /deep-review:deep-review --base main
