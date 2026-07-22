@@ -91,26 +91,25 @@ class PackageTests(unittest.TestCase):
 
         packaged_readme = (SKILL / "README.md").read_text(encoding="utf-8")
         for token in (
-            "/plugin install deep-review@claude-community",
             "/deep-review:deep-review --base main",
             "/deep-review --base main",
             "canonical portable skill package",
         ):
             self.assertIn(token, packaged_readme)
 
-    def test_claude_marketplace_documentation_covers_release_contract(self) -> None:
+    def test_claude_marketplace_prepublication_documentation_contract(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
         maintainers = (ROOT / "docs" / "maintainers.md").read_text(encoding="utf-8")
+        packaged_readme = (SKILL / "README.md").read_text(encoding="utf-8")
 
-        for document in (readme, installation):
+        for document in (readme, installation, packaged_readme):
             for token in (
                 "/plugin marketplace add anthropics/claude-plugins-community",
                 "/plugin install deep-review@claude-community",
-                "/deep-review:deep-review --base main",
-                "/deep-review --base main",
             ):
-                self.assertIn(token, document)
+                self.assertNotIn(token, document)
+        self.assertEqual(installation.count("marketplace is planned"), 1)
         for token in (
             "canonical vendor-neutral Agent Skill",
             "public plugin name `deep-review` is immutable",

@@ -1,6 +1,6 @@
 # Installation
 
-Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep-review/`. Install that directory—not the repository root—under a skill-discovery directory supported by your AI client, or install the same package through the Claude community marketplace after its listing is published.
+Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep-review/`. Install that directory—not the repository root—under a skill-discovery directory supported by your AI client. Publication in the Claude community marketplace is planned; until the listing is available, use one of the manual installation methods below.
 
 ## Choose a scope
 
@@ -17,28 +17,6 @@ After installation, the important path is:
 ```
 
 Do not flatten the package or copy only `SKILL.md`; Deep Review also needs its `references/`, `scripts/`, and `agents/` directories.
-
-## Install from the Claude community marketplace
-
-After the listing is published, add Anthropic's community marketplace and install Deep Review from Claude Code:
-
-```text
-/plugin marketplace add anthropics/claude-plugins-community
-/plugin install deep-review@claude-community
-/reload-plugins
-```
-
-Marketplace installation uses the manifest at `skills/deep-review/.claude-plugin/plugin.json` and installs the same canonical Agent Skill as the manual methods below. The plugin is user-scoped by default; select another supported scope through Claude Code's plugin interface when needed.
-
-The unambiguous marketplace invocation includes both the plugin and skill names:
-
-```text
-/deep-review:deep-review --base main
-```
-
-On Claude Code 2.1.216 and newer, the shorter `/deep-review --base main` alias also invokes the plugin skill when no other command uses that name. Prefer the fully qualified form in shared automation or when resolving a collision. See [Claude Code plugin creation](https://code.claude.com/docs/en/plugins), [community marketplace installation](https://code.claude.com/docs/en/discover-plugins), and [skill command naming](https://code.claude.com/docs/en/slash-commands#how-a-skill-gets-its-command-name).
-
-Marketplace convenience does not weaken the trust model. For an untrusted pull request, merge request, branch, or fork, invoke the installed release from a separate trusted checkout as described in [Choose a scope](#choose-a-scope).
 
 ## Install a project copy
 
