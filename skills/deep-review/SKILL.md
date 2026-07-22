@@ -173,7 +173,7 @@ When the reviewed state is identical to a cached blocked state, re-emit the bloc
 
 ### 8. Validate and aggregate
 
-Validate each result using [Output schemas](references/output-schemas.md). Recount every result; count drift is malformed output. For a language agent, also require every finding category to be one of that invocation's enabled namespaced rule IDs. A disabled or unknown rule category is malformed and prevents readiness.
+Capture each bounded raw result only in private orchestrator memory, then apply the package credential-redaction boundary and validate the redacted result using [Output schemas](references/output-schemas.md). Pass raw bodies to `scripts/process_result.py` only through standard input; never place them in command arguments, logs, diagnostics, or temporary files. If that helper is unavailable, perform the exact equivalent deterministic operation in memory or suppress the result as `UNAVAILABLE`. Only redacted bodies may be merged, aggregated, printed, or persisted. Recount every redacted result; count drift is malformed output. For a language agent, also require every finding category to be one of that invocation's enabled namespaced rule IDs. A disabled or unknown rule category is malformed and prevents readiness.
 
 Classify every validated result with the same retained effective per-agent blocking
 policy used in its key manifest. Do not separately reinterpret extension frontmatter or

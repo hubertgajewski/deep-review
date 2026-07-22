@@ -16,6 +16,20 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Any
 
+from result_processing import (
+    REDACTION_MARKER,
+    RESULT_MAX_UTF8_BYTES,
+    ResultError as CacheError,
+    process_result_body,
+    redact_result_body,
+    sanitize_result_object,
+    validate_allowed_categories,
+    validate_checklist,
+    validate_hml,
+    validate_repo_path,
+    validate_result_object,
+)
+
 try:
     import fcntl as _fcntl
 except ImportError:  # pragma: no cover - exercised on Windows
@@ -29,14 +43,8 @@ except ImportError:  # pragma: no cover - exercised on POSIX
 
 SCHEMA_VERSION = 1
 AGENT_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
-RULE_ID_RE = re.compile(r"^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$")
 HEX_RE = re.compile(r"^[0-9a-f]{64}$")
-HML_SUMMARY_RE = re.compile(r"^summary: (\d+) high / (\d+) medium / (\d+) low$")
-CHECK_SUMMARY_RE = re.compile(r"^summary: (\d+) pass / (\d+) fail / (\d+) N/A$")
-CHECK_ITEM_RE = re.compile(r"^- \[(pass|fail|N/A)\] ([^:]+): (.+)$")
-CHECK_FAILURE_RE = re.compile(r"^([1-9]\d*)\. (.+):([1-9]\d*) (.+)$")
 MAX_SCOPE_STATES = 64
-RESULT_MAX_UTF8_BYTES = 12_000
 CACHE_RECORD_MAX_UTF8_BYTES = 524_288
 MAX_ITERATIONS = 3
 _MISSING_JSON = object()
@@ -71,10 +79,6 @@ BUILTIN_DEFAULT_BLOCKING = {
     "hml": ("HIGH", "MEDIUM"),
     "checklist": ("fail",),
 }
-
-
-class CacheError(Exception):
-    pass
 
 
 def fail(message: str, code: int = 2) -> None:
@@ -244,12 +248,6 @@ def classify_result(
     if blocking:
         return "blocking"
     return "nonblocking" if dependencies_complete else "incomplete"
-
-
-def validate_repo_path(value: str, name: str) -> None:
-    path = Path(value)
-    if not value or path.is_absolute() or ".." in path.parts:
-        raise CacheError(f"{name} must remain repository-relative")
 
 
 def set_private_descriptor_mode(descriptor: int) -> None:
@@ -441,101 +439,6 @@ def validate_key_manifest(value: Any) -> dict[str, Any]:
     return value
 
 
-def validate_hml(text: str, allowed_categories: set[str] | None = None) -> dict[str, int]:
-    lines = [line.rstrip() for line in text.strip().splitlines() if line.strip()]
-    summaries = [(index, HML_SUMMARY_RE.fullmatch(line)) for index, line in enumerate(lines)]
-    summaries = [(index, match) for index, match in summaries if match]
-    if len(summaries) != 1:
-        raise CacheError("H/M/L result must contain exactly one valid summary")
-    summary_index, summary_match = summaries[0]
-    assert summary_match is not None
-    if summary_index != len(lines) - 1:
-        raise CacheError("H/M/L summary must be the final non-empty line")
-    body = lines[:summary_index]
-    if not body:
-        raise CacheError("H/M/L result must contain findings or the exact empty sentinel")
-    counts = {"high": 0, "medium": 0, "low": 0}
-    if body == ["findings: none"]:
-        pass
-    else:
-        for line in body:
-            if line.count(" | ") != 4:
-                raise CacheError(f"invalid H/M/L field separators: {line}")
-            fields = line.split(" | ")
-            if len(fields) != 5 or fields[0] not in {"HIGH", "MEDIUM", "LOW"}:
-                raise CacheError(f"invalid H/M/L finding line: {line}")
-            if not fields[1] or not fields[2] or not fields[3] or not fields[4]:
-                raise CacheError("H/M/L finding fields cannot be empty")
-            if allowed_categories is not None and fields[1] not in allowed_categories:
-                raise CacheError(f"H/M/L category is not enabled for this agent: {fields[1]}")
-            if any(re.search(r"(?<!\\)\|", field) for field in fields):
-                raise CacheError("literal pipes in H/M/L fields must be escaped as \\|")
-            location = re.fullmatch(r"(.+):([1-9]\d*)", fields[2])
-            if not location:
-                raise CacheError("H/M/L locations must use repository-relative file:line")
-            finding_path = location.group(1)
-            validate_repo_path(finding_path, "H/M/L location")
-            counts[fields[0].lower()] += 1
-    expected = tuple(int(summary_match.group(index)) for index in range(1, 4))
-    actual = (counts["high"], counts["medium"], counts["low"])
-    if actual != expected:
-        raise CacheError(f"H/M/L summary drift: body={actual}, summary={expected}")
-    return counts
-
-
-def validate_checklist(text: str) -> dict[str, int]:
-    lines = [line.rstrip() for line in text.strip().splitlines() if line.strip()]
-    summary_entries = [(index, CHECK_SUMMARY_RE.fullmatch(line)) for index, line in enumerate(lines)]
-    summary_entries = [(index, match) for index, match in summary_entries if match]
-    if len(summary_entries) != 1:
-        raise CacheError("checklist result must contain exactly one valid summary")
-    summary_index, summary_match = summary_entries[0]
-    assert summary_match is not None
-    counts = {"pass": 0, "fail": 0, "N/A": 0}
-    for line in lines[:summary_index]:
-        match = CHECK_ITEM_RE.fullmatch(line)
-        if not match:
-            raise CacheError(f"invalid checklist line: {line}")
-        counts[match.group(1)] += 1
-    expected = tuple(int(summary_match.group(index)) for index in range(1, 4))
-    actual = (counts["pass"], counts["fail"], counts["N/A"])
-    if actual != expected:
-        raise CacheError(f"checklist summary drift: body={actual}, summary={expected}")
-    tail = lines[summary_index + 1 :]
-    if counts["fail"] == 0:
-        if tail != ["Failures: none."]:
-            raise CacheError("passing checklist must end with exact empty sentinel")
-    else:
-        if not tail or tail[0] != "Failures (in order of priority):":
-            raise CacheError("failing checklist must include prioritized failures")
-        actions = tail[1:]
-        if len(actions) != counts["fail"]:
-            raise CacheError("checklist must contain exactly one action per failed item")
-        for expected_number, line in enumerate(actions, 1):
-            action = CHECK_FAILURE_RE.fullmatch(line)
-            if not action or int(action.group(1)) != expected_number:
-                raise CacheError("prioritized failures must be consecutively numbered file:line actions")
-            validate_repo_path(action.group(2), "checklist failure location")
-    return counts
-
-
-def validate_result_object(result: Any, schema: str) -> dict[str, int]:
-    if not isinstance(result, dict) or set(result) != {"body", "summary"}:
-        raise CacheError("result JSON must contain only body and summary")
-    if not isinstance(result["body"], str) or not isinstance(result["summary"], dict):
-        raise CacheError("result body must be text and summary must be an object")
-    try:
-        body_size = len(result["body"].encode("utf-8"))
-    except UnicodeEncodeError as exc:
-        raise CacheError("result body must contain valid Unicode scalar values") from exc
-    if body_size > RESULT_MAX_UTF8_BYTES:
-        raise CacheError(f"result body exceeds the {RESULT_MAX_UTF8_BYTES}-byte limit")
-    counts = validate_hml(result["body"]) if schema == "hml" else validate_checklist(result["body"])
-    if result["summary"] != counts:
-        raise CacheError("result summary object does not match validated body counts")
-    return counts
-
-
 def command_hash(args: argparse.Namespace) -> None:
     try:
         data = Path(args.file).read_bytes()
@@ -551,20 +454,11 @@ def command_key(args: argparse.Namespace) -> None:
 
 def command_validate_result(args: argparse.Namespace) -> None:
     text = read_bounded_text(Path(args.file), RESULT_MAX_UTF8_BYTES, "result")
-    allowed_categories = None
-    if args.allowed_category:
-        if args.schema != "hml":
-            raise CacheError("allowed categories apply only to H/M/L results")
-        if len(args.allowed_category) != len(set(args.allowed_category)):
-            raise CacheError("allowed categories cannot contain duplicates")
-        for category in args.allowed_category:
-            if not RULE_ID_RE.fullmatch(category):
-                raise CacheError(f"invalid namespaced rule category: {category}")
-        allowed_categories = set(args.allowed_category)
-    counts = (
-        validate_hml(text, allowed_categories=allowed_categories)
-        if args.schema == "hml"
-        else validate_checklist(text)
+    allowed_categories = validate_allowed_categories(args.schema, args.allowed_category)
+    _, counts = process_result_body(
+        text,
+        args.schema,
+        allowed_categories=allowed_categories,
     )
     print(json.dumps({"schema": args.schema, "counts": counts}, sort_keys=True))
 
@@ -578,8 +472,7 @@ def command_store(args: argparse.Namespace) -> None:
         or not 1 <= args.iteration <= MAX_ITERATIONS
     ):
         raise CacheError(f"iteration must be between 1 and {MAX_ITERATIONS}")
-    result = read_json(Path(args.result))
-    counts = validate_result_object(result, args.schema)
+    result, counts = sanitize_result_object(read_json(Path(args.result)), args.schema)
     manifest = validate_key_manifest(read_json(Path(args.manifest)))
     if manifest["agent"] != args.agent:
         raise CacheError("record agent does not match key manifest agent")
@@ -635,7 +528,7 @@ def validate_cached_record(record: Any, expected_agent: str) -> dict[str, Any]:
     manifest = validate_key_manifest(record["manifest"])
     if manifest["agent"] != expected_agent or sha256_bytes(canonical_bytes(manifest)) != record["key"]:
         raise CacheError("cached key manifest does not match record identity")
-    counts = validate_result_object(record["result"], record["schema"])
+    result, counts = sanitize_result_object(record["result"], record["schema"])
     expected_classification = classify_result(
         record["schema"],
         counts,
@@ -648,7 +541,9 @@ def validate_cached_record(record: Any, expected_agent: str) -> dict[str, Any]:
         )
     if not isinstance(record["stored_at"], str) or not record["stored_at"]:
         raise CacheError("cached agent record has invalid timestamp")
-    return record
+    sanitized_record = dict(record)
+    sanitized_record["result"] = result
+    return sanitized_record
 
 
 def read_agent_record(args: argparse.Namespace) -> dict[str, Any]:

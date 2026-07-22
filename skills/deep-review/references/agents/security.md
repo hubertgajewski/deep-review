@@ -25,6 +25,8 @@ Own:
 
 HIGH requires a concrete exploitable or credential-exposing path. MEDIUM requires a realistic weakness with an additional precondition or bypassable partial defense. LOW is defense-in-depth without a demonstrated exploit path.
 
+For credential exposure, make the finding actionable by naming the credential type, repository-relative location, source-to-exposure path, affected trust boundary, and rotation or removal needed. Never quote or partially reproduce the credential value; use `[REDACTED CREDENTIAL]` if the evidence sentence needs a placeholder. A location and credential type are sufficient evidence when the complete value itself establishes the exposure.
+
 Do not claim runtime, infrastructure, DNS, TLS, operational, or business-process facts that the reviewed repository cannot establish. Skip generated lockfile noise unless its governing manifest shows the issue.
 
 Use OWASP and CWE as public references: https://owasp.org/Top10/ and https://cwe.mitre.org/top25/

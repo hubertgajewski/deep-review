@@ -15,15 +15,31 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CACHE_PATH = ROOT / "skills" / "deep-review" / "scripts" / "cache.py"
+SCRIPTS_PATH = ROOT / "skills" / "deep-review" / "scripts"
+CACHE_PATH = SCRIPTS_PATH / "cache.py"
+PROCESS_RESULT_PATH = SCRIPTS_PATH / "process_result.py"
 SPEC = importlib.util.spec_from_file_location("deep_review_cache", CACHE_PATH)
 assert SPEC and SPEC.loader
 CACHE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(CACHE)
+sys.path.insert(0, str(SCRIPTS_PATH))
+try:
+    SPEC.loader.exec_module(CACHE)
+finally:
+    sys.path.remove(str(SCRIPTS_PATH))
 
 
 def digest(seed: str) -> str:
     return CACHE.sha256_bytes(seed.encode("utf-8"))
+
+
+def expanding_result_body() -> str:
+    short_token = "xoxb-" + "A" * 10 + " "
+    return (
+        "HIGH | credential-exposure | src/auth.py:4 | "
+        + short_token * 700
+        + "credentials are exposed | rotate them\n"
+        + "summary: 1 high / 0 medium / 0 low\n"
+    )
 
 
 AUTO_GENERATION = object()
@@ -282,6 +298,496 @@ class ResultValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(CACHE.CacheError, "not enabled"):
             CACHE.validate_hml(finding, {"typescript.unsafe-type-assertion"})
 
+    def test_hml_redaction_covers_common_credentials_without_changing_schema_fields(self) -> None:
+        provider_token = "gh" + "p_" + "A" * 36
+        gitlab_token = "glpat-" + "G" * 20
+        access_key = "AKIA" + "B" * 16
+        raw = (
+            "HIGH | credential-exposure | src/auth.py:12 | "
+            f"api_key='{access_key}', password=hunter2, token={gitlab_token} | "
+            "rotate the credentials\n"
+            "HIGH | credential-exposure | src/auth.py:13 | "
+            f"Authorization: Bearer {provider_token} | rotate the credential\n"
+            "HIGH | credential-exposure | src/auth.py:14 | "
+            "Cookie: session=abcdef123456 | rotate the credential\n"
+            "summary: 3 high / 0 medium / 0 low\n"
+        )
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        self.assertNotIn(provider_token, redacted)
+        self.assertNotIn(gitlab_token, redacted)
+        self.assertNotIn(access_key, redacted)
+        self.assertNotIn("hunter2", redacted)
+        self.assertNotIn("abcdef123456", redacted)
+        self.assertGreaterEqual(redacted.count(CACHE.REDACTION_MARKER), 3)
+        self.assertTrue(redacted.startswith(
+            "HIGH | credential-exposure | src/auth.py:12 | "
+        ))
+        self.assertIn(" | rotate the credentials\n", redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 3, "medium": 0, "low": 0}
+        )
+
+    def test_authorization_headers_redact_every_scheme_and_value(self) -> None:
+        values = (
+            'Digest username="reviewer", response="opaque-value"',
+            "Negotiate opaque-value",
+            "ApiKey opaque-value",
+            "AWS4-HMAC-SHA256 Credential=opaque-value, Signature=opaque-signature",
+            "opaque-value-without-a-scheme",
+        )
+        raw = "".join(
+            f"HIGH | credential-exposure | src/auth.py:{line} | "
+            f"Authorization: {value} | remove the header\n"
+            for line, value in enumerate(values, 20)
+        ) + "summary: 5 high / 0 medium / 0 low\n"
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for value in values:
+            self.assertNotIn(value, redacted)
+        self.assertEqual(
+            redacted.count(f"Authorization: {CACHE.REDACTION_MARKER}"), 5
+        )
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 5, "medium": 0, "low": 0}
+        )
+
+    def test_quoted_and_indexed_header_keys_are_redacted(self) -> None:
+        values = ("json-value", "dict-value", "indexed-auth", "indexed-cookie")
+        evidence = (
+            f'"Authorization": "{values[0]}"',
+            f"'Cookie': '{values[1]}'",
+            f'headers["Authorization"] = "{values[2]}"',
+            f"headers['Cookie'] = '{values[3]}'",
+        )
+        raw = "".join(
+            f"HIGH | credential-exposure | src/auth.py:{line} | {item} | remove it\n"
+            for line, item in enumerate(evidence, 30)
+        ) + "summary: 4 high / 0 medium / 0 low\n"
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for value in values:
+            self.assertNotIn(value, redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 4)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 4, "medium": 0, "low": 0}
+        )
+
+    def test_sensitive_header_method_calls_are_redacted(self) -> None:
+        values = (
+            "request-value",
+            "response-value",
+            "go-request-value",
+            "go-header-value",
+            "go-response-value",
+            "go-variable-value",
+            "go-arbitrary-value",
+        )
+        raw = (
+            "HIGH | credential-exposure | src/auth.js:40 | "
+            f'xhr.setRequestHeader("Authorization", "{values[0]}") | remove it\n'
+            "HIGH | credential-exposure | src/auth.java:41 | "
+            f'response.setHeader("Cookie", "{values[1]}") | remove it\n'
+            "HIGH | credential-exposure | src/auth.go:42 | "
+            f'req.Header.Set("Authorization", "{values[2]}") | remove it\n'
+            "HIGH | credential-exposure | src/auth.go:43 | "
+            f'Header.Add("Cookie", "{values[3]}") | remove it\n'
+            "HIGH | credential-exposure | src/auth.go:44 | "
+            f'w.Header().Set("Authorization", "{values[4]}") | remove it\n'
+            "HIGH | credential-exposure | src/auth.go:45 | "
+            f'headers.Set("Authorization", "{values[5]}") | remove it\n'
+            "HIGH | credential-exposure | src/auth.go:46 | "
+            f'metadata.Add("Cookie", "{values[6]}") | remove it\n'
+            "summary: 7 high / 0 medium / 0 low\n"
+        )
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for value in values:
+            self.assertNotIn(value, redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 7)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 7, "medium": 0, "low": 0}
+        )
+
+    def test_sensitive_header_placeholders_are_preserved(self) -> None:
+        raw = (
+            "LOW | configuration | src/auth.py:45 | "
+            "Authorization: ${API_TOKEN}. | keep the placeholder punctuation\n"
+            "LOW | configuration | src/auth.py:46 | "
+            "\"Cookie\": \"[REDACTED]\", as documented | keep the placeholder\n"
+            "LOW | configuration | src/auth.java:47 | "
+            "setHeader(\"Authorization\", \"[REDACTED]\"); preserve this prose | keep it\n"
+            "LOW | configuration | src/auth.go:48 | "
+            "headers.Set(\"Cookie\", \"${SESSION_COOKIE}\"); preserve this prose | keep it\n"
+            "LOW | configuration | src/auth.py:49 | Authorization:  | keep empty\n"
+            "summary: 0 high / 0 medium / 5 low\n"
+        )
+
+        self.assertEqual(CACHE.redact_result_body(raw, "hml"), raw)
+
+    def test_sensitive_header_mixed_placeholder_values_are_redacted(self) -> None:
+        values = (
+            "opaque-bare-value",
+            "hardcoded-value",
+            "fallback-value",
+            "no-space-value",
+        )
+        raw = (
+            "HIGH | credential-exposure | src/auth.py:50 | "
+            f"Authorization: ${{API_TOKEN}} {values[0]} | remove the mixed value\n"
+            "HIGH | credential-exposure | src/auth.java:51 | "
+            f'setHeader("Authorization", "${{API_TOKEN}}" + "{values[1]}") | remove it\n'
+            "HIGH | credential-exposure | src/auth.go:52 | "
+            f'headers.Set("Cookie", "${{SESSION_COOKIE}}" || "{values[2]}") | remove it\n'
+            "HIGH | credential-exposure | src/auth.py:53 | "
+            f"Authorization: ${{API_TOKEN}}+{values[3]} | remove it\n"
+            "summary: 4 high / 0 medium / 0 low\n"
+        )
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for value in values:
+            self.assertNotIn(value, redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 4)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+
+    def test_placeholder_headers_do_not_hide_later_credentials(self) -> None:
+        values = ("later-cookie-value", "later-auth-value")
+        raw = (
+            "HIGH | credential-exposure | src/auth.py:54 | "
+            f'"Authorization": "${{API_TOKEN}}", Cookie: {values[0]} | remove it\n'
+            "HIGH | credential-exposure | src/auth.go:55 | "
+            "headers.Set(\"Authorization\", \"[REDACTED]\"); "
+            f'headers.Add("Cookie", "{values[1]}") | remove it\n'
+            "summary: 2 high / 0 medium / 0 low\n"
+        )
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for value in values:
+            self.assertNotIn(value, redacted)
+        self.assertIn('"Authorization": "${API_TOKEN}"', redacted)
+        self.assertIn('headers.Set("Authorization", "[REDACTED]")', redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 2)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+
+    def test_bare_header_names_followed_by_commas_are_not_assignments(self) -> None:
+        raw = (
+            'LOW | "Authorization",review | src/"authorization",notes.txt:12 | '
+            'authorization, then validate; cookie, if present; '
+            'configured headers: "Authorization", "Content-Type" | keep the prose\n'
+            "summary: 0 high / 0 medium / 1 low\n"
+        )
+
+        self.assertEqual(CACHE.redact_result_body(raw, "hml"), raw)
+
+    def test_literal_old_private_key_sentinel_text_is_preserved(self) -> None:
+        literal = "[INTERNAL PRIVATE KEY REDACTION]"
+        raw = (
+            f"LOW | configuration | src/{literal}.txt:12 | {literal} | preserve it\n"
+            "summary: 0 high / 0 medium / 1 low\n"
+        )
+
+        self.assertEqual(CACHE.redact_result_body(raw, "hml"), raw)
+
+    def test_cookie_headers_redact_the_complete_value(self) -> None:
+        session_value = "session-" + "value-123"
+        csrf_value = "csrf-" + "value-456"
+        raw = (
+            "HIGH | credential-exposure | src/auth.py:12 | "
+            f"Cookie: theme=light; session_id={session_value}; csrftoken={csrf_value} | "
+            "remove the request header\n"
+            "HIGH | credential-exposure | src/auth.py:13 | "
+            f"Set-Cookie: session_id={session_value}; Path=/; HttpOnly | "
+            "remove the response header\n"
+            "summary: 2 high / 0 medium / 0 low\n"
+        )
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        self.assertNotIn(session_value, redacted)
+        self.assertNotIn(csrf_value, redacted)
+        self.assertIn(f"Cookie: {CACHE.REDACTION_MARKER}", redacted)
+        self.assertIn(f"Set-Cookie: {CACHE.REDACTION_MARKER}", redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 2, "medium": 0, "low": 0}
+        )
+
+    def test_quoted_credentials_allow_opposite_and_escaped_quotes(self) -> None:
+        single_quoted = 'correct "horse" battery'
+        double_quoted = "correct 'horse' battery"
+        escaped_quote = 'escaped \\"quote\\" value'
+        raw = (
+            "HIGH | credential-exposure | src/auth.py:14 | "
+            f"password='{single_quoted}', token=\"{double_quoted}\", "
+            f'secret="{escaped_quote}" | rotate the credentials\n'
+            "summary: 1 high / 0 medium / 0 low\n"
+        )
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for credential in (single_quoted, double_quoted, escaped_quote):
+            self.assertNotIn(credential, redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 1)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 1, "medium": 0, "low": 0}
+        )
+
+    def test_named_values_with_unsafe_suffixes_are_fully_redacted(
+        self,
+    ) -> None:
+        credentials = (
+            "correct horse battery staple",
+            "<actual-token>",
+            "[actual-secret]",
+            "$API_KEY hardcoded-suffix",
+            "comma,suffix",
+            "semicolon;suffix",
+            r"escaped\|pipe-suffix",
+            f"{CACHE.REDACTION_MARKER},real-suffix",
+            '"${API_TOKEN}" + "quoted-suffix"',
+            '"[REDACTED]" + "marker-suffix"',
+        )
+        names = (
+            "password",
+            "token",
+            "secret",
+            "api_key",
+            "token",
+            "secret",
+            "password",
+            "token",
+            "token",
+            "secret",
+        )
+        raw = "".join(
+            f"HIGH | credential-exposure | src/auth.py:{line} | "
+            f"{name}={value} | rotate it\n"
+            for line, (name, value) in enumerate(
+                zip(names, credentials),
+                60,
+            )
+        ) + "summary: 10 high / 0 medium / 0 low\n"
+
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        for credential in credentials:
+            self.assertNotIn(credential, redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 10)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 10, "medium": 0, "low": 0}
+        )
+
+    def test_private_key_redaction_restores_a_valid_single_line_finding(self) -> None:
+        key_body = "-----BEGIN PRIVATE KEY-----\nQUJDREVGRw==\n-----END PRIVATE KEY-----"
+        raw = (
+            "HIGH | credential-exposure | src/key.py:3 | committed key "
+            f"{key_body} | remove and rotate it\n"
+            "summary: 1 high / 0 medium / 0 low\n"
+        )
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        self.assertNotIn("QUJDREVGRw==", redacted)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 1)
+        self.assertEqual(
+            CACHE.validate_hml(redacted), {"high": 1, "medium": 0, "low": 0}
+        )
+
+    def test_checklist_redaction_preserves_item_and_failure_locations(self) -> None:
+        raw = (
+            "- [fail] secrets: password='correct horse battery staple' is committed\n"
+            "summary: 0 pass / 1 fail / 0 N/A\n"
+            "Failures (in order of priority):\n"
+            "1. token:12 replace api_key=abcdef123456 with an environment lookup\n"
+        )
+        redacted = CACHE.redact_result_body(raw, "checklist")
+
+        self.assertIn("- [fail] secrets:", redacted)
+        self.assertIn("1. token:12 replace", redacted)
+        self.assertNotIn("correct horse battery staple", redacted)
+        self.assertNotIn("abcdef123456", redacted)
+        self.assertEqual(
+            CACHE.validate_checklist(redacted), {"pass": 0, "fail": 1, "N/A": 0}
+        )
+
+    def test_redaction_is_idempotent_and_preserves_false_positive_shaped_values(self) -> None:
+        raw = (
+            "LOW | configuration | src/token:12 | "
+            "token_count=4 and password_policy=strict | keep configuration names\n"
+            "LOW | configuration | src/token:13 | token=${API_TOKEN} | keep placeholder\n"
+            "LOW | configuration | src/token:14 | secret=[REDACTED] | keep marker\n"
+            "LOW | configuration | src/token:15 | password: hardcoded | keep state\n"
+            "LOW | configuration | src/token:16 | token: exposed | keep state\n"
+            "summary: 0 high / 0 medium / 5 low\n"
+        )
+        redacted = CACHE.redact_result_body(raw, "hml")
+
+        self.assertEqual(redacted, raw)
+        self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
+
+    def test_process_result_reads_stdin_and_never_echoes_raw_credentials(self) -> None:
+        provider_token = "gh" + "p_" + "C" * 36
+        valid = (
+            "HIGH | credential-exposure | src/auth.py:9 | "
+            f"token={provider_token} is logged | remove the log\n"
+            "summary: 1 high / 0 medium / 0 low\n"
+        )
+        completed = subprocess.run(
+            [sys.executable, str(PROCESS_RESULT_PATH), "--schema", "hml"],
+            input=valid,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0)
+        processed = json.loads(completed.stdout)
+        self.assertNotIn(provider_token, completed.stdout)
+        self.assertIn(CACHE.REDACTION_MARKER, processed["body"])
+        self.assertEqual(processed["summary"], {"high": 1, "medium": 0, "low": 0})
+
+        malformed = f"malformed password={provider_token}\nsummary: 0 high / 0 medium / 0 low\n"
+        failed = subprocess.run(
+            [sys.executable, str(PROCESS_RESULT_PATH), "--schema", "hml"],
+            input=malformed,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(failed.returncode, 2)
+        self.assertNotIn(provider_token, failed.stderr)
+        self.assertNotIn("malformed password", failed.stderr)
+        self.assertNotIn("Traceback", failed.stderr)
+
+    def test_process_result_rejects_credentials_in_structural_fields(self) -> None:
+        provider_token = "glpat-" + "S" * 20
+        cases = (
+            (
+                "hml",
+                f"HIGH | token={provider_token} | src/auth.py:9 | evidence | fix\n"
+                "summary: 1 high / 0 medium / 0 low\n",
+                "H/M/L category",
+            ),
+            (
+                "hml",
+                f"HIGH | credential-exposure | src/token={provider_token}:9 | evidence | fix\n"
+                "summary: 1 high / 0 medium / 0 low\n",
+                "H/M/L location",
+            ),
+            (
+                "checklist",
+                f"- [pass] token={provider_token}: evidence\n"
+                "summary: 1 pass / 0 fail / 0 N/A\n"
+                "Failures: none.\n",
+                "checklist item name",
+            ),
+        )
+
+        for schema, raw, expected_error in cases:
+            with self.subTest(schema=schema, expected_error=expected_error):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(PROCESS_RESULT_PATH),
+                        "--schema",
+                        schema,
+                    ],
+                    input=raw,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual(completed.stdout, "")
+                self.assertIn(expected_error, completed.stderr)
+                self.assertNotIn(provider_token, completed.stderr)
+                self.assertNotIn("Traceback", completed.stderr)
+
+    def test_process_result_rejects_private_keys_in_structural_fields(self) -> None:
+        private_key = (
+            "-----BEGIN PRIVATE KEY-----\n"
+            "QUJDREVGRw==\n"
+            "-----END PRIVATE KEY-----"
+        )
+        cases = (
+            (
+                "hml",
+                f"HIGH | {private_key} | src/auth.py:9 | evidence | fix\n"
+                "summary: 1 high / 0 medium / 0 low\n",
+            ),
+            (
+                "checklist",
+                f"- [pass] {private_key}: evidence\n"
+                "summary: 1 pass / 0 fail / 0 N/A\n"
+                "Failures: none.\n",
+            ),
+        )
+
+        for schema, raw in cases:
+            with self.subTest(schema=schema):
+                completed = subprocess.run(
+                    [sys.executable, str(PROCESS_RESULT_PATH), "--schema", schema],
+                    input=raw,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual(completed.stdout, "")
+                self.assertNotIn("QUJDREVGRw==", completed.stderr)
+                self.assertNotIn("Traceback", completed.stderr)
+
+    def test_process_result_rejects_invalid_or_oversized_stdin_without_traceback(self) -> None:
+        for payload, expected in (
+            (b"\xff\xfe", b"cannot read UTF-8 result from standard input"),
+            (b"x" * (CACHE.RESULT_MAX_UTF8_BYTES + 1), b"result exceeds"),
+        ):
+            with self.subTest(expected=expected):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(PROCESS_RESULT_PATH),
+                        "--schema",
+                        "hml",
+                    ],
+                    input=payload,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual(completed.stdout, b"")
+                self.assertIn(expected, completed.stderr)
+                self.assertNotIn(b"Traceback", completed.stderr)
+
+    def test_process_result_rejects_redaction_that_exceeds_the_result_limit(self) -> None:
+        raw = expanding_result_body()
+        self.assertLessEqual(len(raw.encode("utf-8")), CACHE.RESULT_MAX_UTF8_BYTES)
+        self.assertGreater(
+            len(CACHE.redact_result_body(raw, "hml").encode("utf-8")),
+            CACHE.RESULT_MAX_UTF8_BYTES,
+        )
+
+        completed = subprocess.run(
+            [sys.executable, str(PROCESS_RESULT_PATH), "--schema", "hml"],
+            input=raw,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(completed.stdout, "")
+        self.assertIn("redacted result body exceeds", completed.stderr)
+        self.assertNotIn("token=z", completed.stderr)
+        self.assertNotIn("Traceback", completed.stderr)
+
     def test_validate_result_command_rejects_invalid_allowed_categories(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result = Path(directory) / "result.txt"
@@ -400,6 +906,144 @@ class CacheStorageTests(unittest.TestCase):
 
         self.assertEqual(opened_modes, ["wb"])
         self.assertEqual(path.read_bytes(), expected)
+
+    def test_store_redacts_result_before_stdout_and_persistence(self) -> None:
+        provider_token = "gh" + "p_" + "D" * 36
+        result_path = self.root / "result.json"
+        manifest_path = self.root / "manifest.json"
+        key_manifest = manifest()
+        manifest_path.write_text(json.dumps(key_manifest), encoding="utf-8")
+        key = CACHE.sha256_bytes(CACHE.canonical_bytes(key_manifest))
+        result_path.write_text(
+            json.dumps(
+                {
+                    "body": (
+                        "HIGH | credential-exposure | src/auth.py:4 | "
+                        f"password={provider_token} is exposed | rotate it\n"
+                        "summary: 1 high / 0 medium / 0 low\n"
+                    ),
+                    "summary": {"high": 1, "medium": 0, "low": 0},
+                }
+            ),
+            encoding="utf-8",
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            CACHE.command_store(
+                argparse.Namespace(
+                    repo_root=str(self.root),
+                    cache_dir=".deep-review-cache",
+                    agent="code",
+                    key=key,
+                    classification="blocking",
+                    iteration=1,
+                    schema="hml",
+                    manifest=str(manifest_path),
+                    result=str(result_path),
+                )
+            )
+
+        record_path = self.cache_dir / "agents" / "code.json"
+        self.assertNotIn(provider_token, output.getvalue())
+        self.assertNotIn(provider_token.encode("utf-8"), record_path.read_bytes())
+        self.assertIn(CACHE.REDACTION_MARKER, output.getvalue())
+        self.assertIn(CACHE.REDACTION_MARKER.encode("utf-8"), record_path.read_bytes())
+
+    def test_processed_result_remains_stable_through_store_and_lookup(self) -> None:
+        provider_token = "gh" + "p_" + "E" * 36
+        gitlab_token = "glpat-" + "H" * 20
+        cookie_value = "session-" + "value-789"
+        raw = (
+            "HIGH | credential-exposure | src/auth.py:4 | "
+            f"password=hunter2, Authorization: Bearer {provider_token}, "
+            f"token={gitlab_token}, Cookie: theme=light; session_id={cookie_value} | "
+            "rotate the credentials\n"
+            "summary: 1 high / 0 medium / 0 low\n"
+        )
+        completed = subprocess.run(
+            [sys.executable, str(PROCESS_RESULT_PATH), "--schema", "hml"],
+            input=raw,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0)
+        processed = json.loads(completed.stdout)
+        processed_body = processed["body"]
+        self.assertEqual(CACHE.redact_result_body(processed_body, "hml"), processed_body)
+
+        result_path = self.root / "result.json"
+        manifest_path = self.root / "manifest.json"
+        key_manifest = manifest()
+        manifest_path.write_text(json.dumps(key_manifest), encoding="utf-8")
+        result_path.write_text(json.dumps(processed), encoding="utf-8")
+        key = CACHE.sha256_bytes(CACHE.canonical_bytes(key_manifest))
+        common = {
+            "repo_root": str(self.root),
+            "cache_dir": ".deep-review-cache",
+            "agent": "code",
+            "key": key,
+        }
+        with redirect_stdout(io.StringIO()):
+            CACHE.command_store(
+                argparse.Namespace(
+                    **common,
+                    classification="blocking",
+                    iteration=1,
+                    schema="hml",
+                    manifest=str(manifest_path),
+                    result=str(result_path),
+                )
+            )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            CACHE.command_lookup(argparse.Namespace(**common))
+        looked_up = json.loads(output.getvalue())
+
+        self.assertEqual(looked_up["result"]["body"], processed_body)
+        self.assertEqual(
+            looked_up["result"]["body"].count(CACHE.REDACTION_MARKER),
+            processed_body.count(CACHE.REDACTION_MARKER),
+        )
+        for credential in ("hunter2", provider_token, gitlab_token, cookie_value):
+            self.assertNotIn(credential, completed.stdout)
+            self.assertNotIn(credential, output.getvalue())
+            self.assertNotIn(
+                credential.encode("utf-8"),
+                (self.cache_dir / "agents" / "code.json").read_bytes(),
+            )
+
+    def test_store_rejects_redaction_that_exceeds_the_result_limit(self) -> None:
+        raw = expanding_result_body()
+        result_path = self.root / "result.json"
+        manifest_path = self.root / "manifest.json"
+        key_manifest = manifest()
+        manifest_path.write_text(json.dumps(key_manifest), encoding="utf-8")
+        result_path.write_text(
+            json.dumps(
+                {
+                    "body": raw,
+                    "summary": {"high": 1, "medium": 0, "low": 0},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(CACHE.CacheError, "redacted result body exceeds"):
+            CACHE.command_store(
+                argparse.Namespace(
+                    repo_root=str(self.root),
+                    cache_dir=".deep-review-cache",
+                    agent="code",
+                    key=CACHE.sha256_bytes(CACHE.canonical_bytes(key_manifest)),
+                    classification="blocking",
+                    iteration=1,
+                    schema="hml",
+                    manifest=str(manifest_path),
+                    result=str(result_path),
+                )
+            )
+        self.assertFalse((self.cache_dir / "agents" / "code.json").exists())
 
     def test_cache_reads_and_writes_reject_oversized_records(self) -> None:
         read_path = self.cache_dir / "oversized-read.json"

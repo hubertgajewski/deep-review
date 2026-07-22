@@ -144,7 +144,9 @@ low_risk = ["docs/**", "**/*.snap"]
 high_risk = ["**/auth/**", "**/security/**", "**/crypto/**"]
 ```
 
-The cache directory must remain inside the repository and be ignored by Git. Do not restore it from an untrusted CI artifact or share it between users, jobs, or forks.
+Reviewer findings must identify exposed credentials by type and location without reproducing their values. Deep Review conservatively replaces recognized private keys, authorization or cookie header values, named credential assignments, and common token formats with `[REDACTED CREDENTIAL]` before schema validation, output, temporary storage, or caching. Quoted and unquoted named values are captured through the parsed result-field boundary before placeholder classification, so punctuation, concatenation, or text after a closing quote cannot expose a suffix. Only complete exact environment references, explicit redaction markers, fixed masking runs, and package-defined non-value words are preserved as placeholders; arbitrary bracketed text and mixed placeholder/value expressions are redacted. This defense reduces additional copies but is not a general-purpose secret scanner.
+
+The cache directory must remain inside the repository and be ignored by Git. Do not restore it from an untrusted CI artifact or share it between users, jobs, or forks, including when all currently recognized values have been redacted.
 
 ## Add a language or domain reviewer
 
