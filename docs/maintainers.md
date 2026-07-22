@@ -64,8 +64,8 @@ The public plugin name `deep-review` is immutable after publication. Treat `skil
 7. Review the complete release diff and merge it to `main`. In GitLab, protect the `v*` tag pattern so only maintainers can create release tags. After explicit release authorization, fetch the merged state, derive the version from the manifest, and tag that exact commit—never an unmerged feature branch:
 
    ```bash
-   release_version=$(python3 -c 'import json; print(json.load(open("skills/deep-review/.claude-plugin/plugin.json"))["version"])')
    git fetch origin main
+   release_version=$(git show origin/main:skills/deep-review/.claude-plugin/plugin.json | python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])')
    git tag -a "v$release_version" origin/main -m "Deep Review $release_version"
    git push origin "v$release_version"
    ```

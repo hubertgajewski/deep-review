@@ -117,12 +117,17 @@ class PackageTests(unittest.TestCase):
             "claude plugin validate --strict skills/deep-review",
             "python3 -m unittest discover -s tests -v",
             "claude --plugin-dir ./skills/deep-review",
-            "release_version=$(python3 -c",
+            "release_version=$(git show origin/main:skills/deep-review/.claude-plugin/plugin.json | python3 -c",
             "git tag -a \"v$release_version\" origin/main",
             "https://platform.claude.com/plugins/submit",
             "skills/deep-review",
         ):
             self.assertIn(token, maintainers)
+
+        self.assertLess(
+            maintainers.index("git fetch origin main"),
+            maintainers.index("release_version=$(git show origin/main:"),
+        )
 
         pipeline = (ROOT / ".gitlab-ci.yml").read_text(encoding="utf-8")
         for token in (
