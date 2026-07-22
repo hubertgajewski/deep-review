@@ -37,7 +37,7 @@ NAMED_CREDENTIAL_RE = re.compile(
     r"(?P<separator>\s*[:=]\s*)"
     r'(?:(?P<double_quote>")(?P<double_quoted>(?:\\.|[^"\\\r\n])*)"|'
     r"(?P<single_quote>')(?P<single_quoted>(?:\\.|[^'\\\r\n])*)'|"
-    rf"(?P<bare>{re.escape(REDACTION_MARKER)}|[^\r\n,;|]+))",
+    r"(?P<bare>[^\r\n]+))",
     re.IGNORECASE,
 )
 WELL_KNOWN_CREDENTIAL_RES = (

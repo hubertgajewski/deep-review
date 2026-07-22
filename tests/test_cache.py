@@ -35,7 +35,7 @@ def digest(seed: str) -> str:
 def expanding_result_body() -> str:
     return (
         "HIGH | credential-exposure | src/auth.py:4 | "
-        + "token=z, " * 600
+        + "token='z', " * 600
         + "credentials are exposed | rotate them\n"
         + "summary: 1 high / 0 medium / 0 low\n"
     )
@@ -318,7 +318,7 @@ class ResultValidationTests(unittest.TestCase):
         self.assertNotIn(access_key, redacted)
         self.assertNotIn("hunter2", redacted)
         self.assertNotIn("abcdef123456", redacted)
-        self.assertGreaterEqual(redacted.count(CACHE.REDACTION_MARKER), 5)
+        self.assertGreaterEqual(redacted.count(CACHE.REDACTION_MARKER), 4)
         self.assertTrue(redacted.startswith(
             "HIGH | credential-exposure | src/auth.py:12 | "
         ))
@@ -547,24 +547,38 @@ class ResultValidationTests(unittest.TestCase):
             "<actual-token>",
             "[actual-secret]",
             "$API_KEY hardcoded-suffix",
+            "comma,suffix",
+            "semicolon;suffix",
+            r"escaped\|pipe-suffix",
+            f"{CACHE.REDACTION_MARKER},real-suffix",
+        )
+        names = (
+            "password",
+            "token",
+            "secret",
+            "api_key",
+            "token",
+            "secret",
+            "password",
+            "token",
         )
         raw = "".join(
             f"HIGH | credential-exposure | src/auth.py:{line} | "
             f"{name}={value} | rotate it\n"
             for line, (name, value) in enumerate(
-                zip(("password", "token", "secret", "api_key"), credentials),
+                zip(names, credentials),
                 60,
             )
-        ) + "summary: 4 high / 0 medium / 0 low\n"
+        ) + "summary: 8 high / 0 medium / 0 low\n"
 
         redacted = CACHE.redact_result_body(raw, "hml")
 
         for credential in credentials:
             self.assertNotIn(credential, redacted)
-        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 4)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 8)
         self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
         self.assertEqual(
-            CACHE.validate_hml(redacted), {"high": 4, "medium": 0, "low": 0}
+            CACHE.validate_hml(redacted), {"high": 8, "medium": 0, "low": 0}
         )
 
     def test_private_key_redaction_restores_a_valid_single_line_finding(self) -> None:
@@ -601,10 +615,13 @@ class ResultValidationTests(unittest.TestCase):
 
     def test_redaction_is_idempotent_and_preserves_false_positive_shaped_values(self) -> None:
         raw = (
-            "LOW | configuration | src/token:12 | token_count=4, password_policy=strict, "
-            "token=${API_TOKEN}, secret=[REDACTED], api_key=[REDACTED], password: hardcoded, "
-            "token: exposed | keep placeholders\n"
-            "summary: 0 high / 0 medium / 1 low\n"
+            "LOW | configuration | src/token:12 | "
+            "token_count=4 and password_policy=strict | keep configuration names\n"
+            "LOW | configuration | src/token:13 | token=${API_TOKEN} | keep placeholder\n"
+            "LOW | configuration | src/token:14 | secret=[REDACTED] | keep marker\n"
+            "LOW | configuration | src/token:15 | password: hardcoded | keep state\n"
+            "LOW | configuration | src/token:16 | token: exposed | keep state\n"
+            "summary: 0 high / 0 medium / 5 low\n"
         )
         redacted = CACHE.redact_result_body(raw, "hml")
 
