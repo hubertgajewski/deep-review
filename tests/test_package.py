@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import re
@@ -16,6 +17,10 @@ SKILL = ROOT / "skills" / "deep-review"
 class PackageTests(unittest.TestCase):
     def test_required_package_files_exist(self) -> None:
         required = [
+            ".claude-plugin/plugin.json",
+            "CHANGELOG.md",
+            "LICENSE",
+            "README.md",
             "SKILL.md",
             "agents/openai.yaml",
             "scripts/cache.py",
@@ -36,6 +41,108 @@ class PackageTests(unittest.TestCase):
         ))
         for relative in required:
             self.assertTrue((SKILL / relative).is_file(), relative)
+
+    def test_claude_plugin_package_is_complete_and_consistent(self) -> None:
+        manifest_path = SKILL / ".claude-plugin" / "plugin.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertIsInstance(manifest, dict)
+        self.assertEqual(
+            set(manifest),
+            {
+                "$schema", "name", "displayName", "version", "description", "author",
+                "homepage", "repository", "license", "keywords",
+            },
+        )
+        self.assertEqual(
+            manifest["$schema"],
+            "https://json.schemastore.org/claude-code-plugin-manifest.json",
+        )
+        self.assertEqual(manifest["name"], SKILL.name)
+        self.assertEqual(manifest["displayName"], "Deep Review")
+        self.assertRegex(manifest["version"], r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+        self.assertIn("multi-agent code reviews", manifest["description"])
+        self.assertEqual(manifest["author"], {"name": "Hubert Gajewski"})
+        self.assertEqual(
+            manifest["homepage"],
+            "https://gitlab.com/hubertgajewski-ai/deep-review",
+        )
+        self.assertEqual(manifest["repository"], manifest["homepage"])
+        self.assertEqual(manifest["license"], "MIT")
+        self.assertEqual(
+            manifest["keywords"],
+            ["code-review", "security", "git", "github", "gitlab"],
+        )
+
+        skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        skill_name = re.search(r"(?m)^name: ([a-z0-9-]+)$", skill_text)
+        self.assertIsNotNone(skill_name)
+        assert skill_name is not None
+        self.assertEqual(skill_name.group(1), manifest["name"])
+        self.assertEqual(
+            [path.relative_to(SKILL) for path in SKILL.rglob("SKILL.md")],
+            [Path("SKILL.md")],
+        )
+
+        changelog = (SKILL / "CHANGELOG.md").read_text(encoding="utf-8")
+        versions = re.findall(r"(?m)^## \[([^]]+)\] - \d{4}-\d{2}-\d{2}$", changelog)
+        self.assertTrue(versions)
+        self.assertEqual(versions[0], manifest["version"])
+        self.assertEqual((SKILL / "LICENSE").read_bytes(), (ROOT / "LICENSE").read_bytes())
+
+        packaged_readme = (SKILL / "README.md").read_text(encoding="utf-8")
+        for token in (
+            "/plugin install deep-review@claude-community",
+            "/deep-review:deep-review --base main",
+            "/deep-review --base main",
+            "canonical portable skill package",
+        ):
+            self.assertIn(token, packaged_readme)
+
+    def test_claude_marketplace_documentation_covers_release_contract(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        maintainers = (ROOT / "docs" / "maintainers.md").read_text(encoding="utf-8")
+
+        for document in (readme, installation):
+            for token in (
+                "/plugin marketplace add anthropics/claude-plugins-community",
+                "/plugin install deep-review@claude-community",
+                "/deep-review:deep-review --base main",
+                "/deep-review --base main",
+            ):
+                self.assertIn(token, document)
+        for token in (
+            "canonical vendor-neutral Agent Skill",
+            "public plugin name `deep-review` is immutable",
+            "claude plugin validate --strict skills/deep-review",
+            "python3 -m unittest discover -s tests -v",
+            "claude --plugin-dir ./skills/deep-review",
+            "release_version=$(git show origin/main:skills/deep-review/.claude-plugin/plugin.json | python3 -c",
+            "git tag -a \"v$release_version\" origin/main",
+            "https://platform.claude.com/plugins/submit",
+            "skills/deep-review",
+        ):
+            self.assertIn(token, maintainers)
+
+        self.assertLess(
+            maintainers.index("git fetch origin main"),
+            maintainers.index("release_version=$(git show origin/main:"),
+        )
+
+        pipeline = (ROOT / ".gitlab-ci.yml").read_text(encoding="utf-8")
+        for token in (
+            "prepare_claude_submission:",
+            "CI_COMMIT_REF_PROTECTED == \"true\"",
+            "GIT_DEPTH: \"0\"",
+            "git cat-file -t \"$CI_COMMIT_TAG\"",
+            "git rev-parse \"$CI_COMMIT_TAG^{commit}\"",
+            "git fetch --no-tags origin \"refs/heads/main:refs/remotes/origin/main\"",
+            "git merge-base --is-ancestor \"$CI_COMMIT_SHA\" origin/main",
+            "claude plugin validate --strict skills/deep-review",
+            "git archive --format=tar.gz --prefix=deep-review/",
+            "deep-review-$CI_COMMIT_TAG.tar.gz.sha256",
+        ):
+            self.assertIn(token, pipeline)
 
     def test_skill_is_concise_and_has_valid_frontmatter(self) -> None:
         text = (SKILL / "SKILL.md").read_text(encoding="utf-8")

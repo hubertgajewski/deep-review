@@ -28,6 +28,18 @@ A skill stored inside a repository is trusted client configuration, so do not in
 Use the deep-review skill to review my current repository changes.
 ```
 
+### Claude community marketplace
+
+After Deep Review is published in Anthropic's community marketplace, Claude Code users can install it without copying the skill directory manually:
+
+```text
+/plugin marketplace add anthropics/claude-plugins-community
+/plugin install deep-review@claude-community
+/reload-plugins
+```
+
+The fully qualified plugin invocation is `/deep-review:deep-review --base main`. On Claude Code 2.1.216 and newer, `/deep-review --base main` is also a convenience alias when no other command has that name. The plugin packages the same canonical `skills/deep-review/` Agent Skill used by standalone installations; marketplace metadata does not fork or replace the portable workflow.
+
 ### Invoking Deep Review
 
 Invocation syntax depends on the client:

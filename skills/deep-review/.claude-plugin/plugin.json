@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "deep-review",
+  "displayName": "Deep Review",
+  "version": "1.0.0",
+  "description": "Run configurable multi-agent code reviews over local changes, Git refs, repository paths, GitHub pull requests, and GitLab merge requests.",
+  "author": {
+    "name": "Hubert Gajewski"
+  },
+  "homepage": "https://gitlab.com/hubertgajewski-ai/deep-review",
+  "repository": "https://gitlab.com/hubertgajewski-ai/deep-review",
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "security",
+    "git",
+    "github",
+    "gitlab"
+  ]
+}

@@ -1,5 +1,6 @@
 stages:
   - test
+  - release
 
 variables:
   CI_ENABLED:
@@ -11,6 +12,7 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_ENABLED == "false"'
       when: never
+    - if: "$CI_COMMIT_TAG"
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
       when: never
@@ -32,3 +34,36 @@ test:
     - apt-get install -y --no-install-recommends git
   script:
     - python -m unittest discover -s tests -v
+
+prepare_claude_submission:
+  stage: release
+  image: "python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6"
+  interruptible: true
+  timeout: 10m
+  variables:
+    GIT_DEPTH: "0"
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/ && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: manual
+      allow_failure: false
+    - when: never
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends git nodejs npm
+    - npm install --global "@anthropic-ai/claude-code@2.1.216"
+  script:
+    - test "$(git cat-file -t "$CI_COMMIT_TAG")" = "tag"
+    - test "$(git rev-parse "$CI_COMMIT_TAG^{commit}")" = "$CI_COMMIT_SHA"
+    - git fetch --no-tags origin "refs/heads/main:refs/remotes/origin/main"
+    - git merge-base --is-ancestor "$CI_COMMIT_SHA" origin/main
+    - test "$CI_COMMIT_TAG" = "v$(python -c 'import json; print(json.load(open("skills/deep-review/.claude-plugin/plugin.json"))["version"])')"
+    - python -m unittest discover -s tests -v
+    - claude plugin validate --strict skills/deep-review
+    - git archive --format=tar.gz --prefix=deep-review/ --output="deep-review-$CI_COMMIT_TAG.tar.gz" "$CI_COMMIT_TAG:skills/deep-review"
+    - sha256sum "deep-review-$CI_COMMIT_TAG.tar.gz" > "deep-review-$CI_COMMIT_TAG.tar.gz.sha256"
+  artifacts:
+    name: "deep-review-$CI_COMMIT_TAG"
+    paths:
+      - "deep-review-$CI_COMMIT_TAG.tar.gz"
+      - "deep-review-$CI_COMMIT_TAG.tar.gz.sha256"
+    expire_in: 30 days
