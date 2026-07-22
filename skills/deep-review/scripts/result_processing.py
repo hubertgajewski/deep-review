@@ -35,9 +35,7 @@ NAMED_CREDENTIAL_RE = re.compile(
     r"access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|"
     r"password|passwd|pwd|token|secret|cookie)\b"
     r"(?P<separator>\s*[:=]\s*)"
-    r'(?:(?P<double_quote>")(?P<double_quoted>(?:\\.|[^"\\\r\n])*)"|'
-    r"(?P<single_quote>')(?P<single_quoted>(?:\\.|[^'\\\r\n])*)'|"
-    r"(?P<bare>[^\r\n]+))",
+    r"(?P<value>[^\r\n]+)",
     re.IGNORECASE,
 )
 WELL_KNOWN_CREDENTIAL_RES = (
@@ -172,16 +170,15 @@ def redact_sensitive_text(text: str) -> str:
         redacted = pattern.sub(REDACTION_MARKER, redacted)
 
     def replace_named(match: re.Match[str]) -> str:
-        if match.group("double_quote") is not None:
-            value = match.group("double_quoted") or ""
-            quote = '"'
-        elif match.group("single_quote") is not None:
-            value = match.group("single_quoted") or ""
-            quote = "'"
+        value = match.group("value")
+        normalized = value.strip()
+        quote = normalized[:1] if normalized[:1] in {"'", '"'} else ""
+        if quote and normalized.endswith(quote):
+            placeholder_value = normalized[1:-1]
         else:
-            value = match.group("bare") or ""
+            placeholder_value = normalized
             quote = ""
-        if credential_value_is_placeholder(value):
+        if credential_value_is_placeholder(placeholder_value):
             return match.group(0)
         return (
             f"{match.group('name')}{match.group('separator')}"

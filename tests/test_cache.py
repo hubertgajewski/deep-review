@@ -33,9 +33,10 @@ def digest(seed: str) -> str:
 
 
 def expanding_result_body() -> str:
+    short_token = "xoxb-" + "A" * 10 + " "
     return (
         "HIGH | credential-exposure | src/auth.py:4 | "
-        + "token='z', " * 600
+        + short_token * 700
         + "credentials are exposed | rotate them\n"
         + "summary: 1 high / 0 medium / 0 low\n"
     )
@@ -318,7 +319,7 @@ class ResultValidationTests(unittest.TestCase):
         self.assertNotIn(access_key, redacted)
         self.assertNotIn("hunter2", redacted)
         self.assertNotIn("abcdef123456", redacted)
-        self.assertGreaterEqual(redacted.count(CACHE.REDACTION_MARKER), 4)
+        self.assertGreaterEqual(redacted.count(CACHE.REDACTION_MARKER), 3)
         self.assertTrue(redacted.startswith(
             "HIGH | credential-exposure | src/auth.py:12 | "
         ))
@@ -533,13 +534,13 @@ class ResultValidationTests(unittest.TestCase):
 
         for credential in (single_quoted, double_quoted, escaped_quote):
             self.assertNotIn(credential, redacted)
-        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 3)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 1)
         self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
         self.assertEqual(
             CACHE.validate_hml(redacted), {"high": 1, "medium": 0, "low": 0}
         )
 
-    def test_unquoted_multiword_and_ambiguous_placeholders_are_fully_redacted(
+    def test_named_values_with_unsafe_suffixes_are_fully_redacted(
         self,
     ) -> None:
         credentials = (
@@ -551,6 +552,8 @@ class ResultValidationTests(unittest.TestCase):
             "semicolon;suffix",
             r"escaped\|pipe-suffix",
             f"{CACHE.REDACTION_MARKER},real-suffix",
+            '"${API_TOKEN}" + "quoted-suffix"',
+            '"[REDACTED]" + "marker-suffix"',
         )
         names = (
             "password",
@@ -561,6 +564,8 @@ class ResultValidationTests(unittest.TestCase):
             "secret",
             "password",
             "token",
+            "token",
+            "secret",
         )
         raw = "".join(
             f"HIGH | credential-exposure | src/auth.py:{line} | "
@@ -569,16 +574,16 @@ class ResultValidationTests(unittest.TestCase):
                 zip(names, credentials),
                 60,
             )
-        ) + "summary: 8 high / 0 medium / 0 low\n"
+        ) + "summary: 10 high / 0 medium / 0 low\n"
 
         redacted = CACHE.redact_result_body(raw, "hml")
 
         for credential in credentials:
             self.assertNotIn(credential, redacted)
-        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 8)
+        self.assertEqual(redacted.count(CACHE.REDACTION_MARKER), 10)
         self.assertEqual(CACHE.redact_result_body(redacted, "hml"), redacted)
         self.assertEqual(
-            CACHE.validate_hml(redacted), {"high": 8, "medium": 0, "low": 0}
+            CACHE.validate_hml(redacted), {"high": 10, "medium": 0, "low": 0}
         )
 
     def test_private_key_redaction_restores_a_valid_single_line_finding(self) -> None:
