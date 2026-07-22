@@ -59,7 +59,6 @@ class PackageTests(unittest.TestCase):
         )
         self.assertEqual(manifest["name"], SKILL.name)
         self.assertEqual(manifest["displayName"], "Deep Review")
-        self.assertEqual(manifest["version"], "1.0.0")
         self.assertRegex(manifest["version"], r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
         self.assertIn("multi-agent code reviews", manifest["description"])
         self.assertEqual(manifest["author"], {"name": "Hubert Gajewski"})
@@ -118,7 +117,8 @@ class PackageTests(unittest.TestCase):
             "claude plugin validate --strict skills/deep-review",
             "python3 -m unittest discover -s tests -v",
             "claude --plugin-dir ./skills/deep-review",
-            "git tag -a v1.0.0 origin/main",
+            "release_version=$(python3 -c",
+            "git tag -a \"v$release_version\" origin/main",
             "https://platform.claude.com/plugins/submit",
             "skills/deep-review",
         ):
@@ -127,8 +127,12 @@ class PackageTests(unittest.TestCase):
         pipeline = (ROOT / ".gitlab-ci.yml").read_text(encoding="utf-8")
         for token in (
             "prepare_claude_submission:",
-            "if: '$CI_COMMIT_TAG =~ /^v\\d+\\.\\d+\\.\\d+$/'",
+            "CI_COMMIT_REF_PROTECTED == \"true\"",
+            "GIT_DEPTH: \"0\"",
             "git cat-file -t \"$CI_COMMIT_TAG\"",
+            "git rev-parse \"$CI_COMMIT_TAG^{commit}\"",
+            "git fetch --no-tags origin \"refs/heads/main:refs/remotes/origin/main\"",
+            "git merge-base --is-ancestor \"$CI_COMMIT_SHA\" origin/main",
             "claude plugin validate --strict skills/deep-review",
             "git archive --format=tar.gz --prefix=deep-review/",
             "deep-review-$CI_COMMIT_TAG.tar.gz.sha256",

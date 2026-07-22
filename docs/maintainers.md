@@ -61,17 +61,16 @@ The public plugin name `deep-review` is immutable after publication. Treat `skil
 
    In the new session, confirm `/deep-review:deep-review` is available, run it against a small known diff, and verify that the review reaches a documented terminal state. On Claude Code 2.1.216 and newer, also confirm the `/deep-review` convenience alias when no conflicting command is installed.
 
-7. Review the complete release diff and merge it to `main`. Fetch the merged state and tag that exact commit, never an unmerged feature branch:
+7. Review the complete release diff and merge it to `main`. In GitLab, protect the `v*` tag pattern so only maintainers can create release tags. After explicit release authorization, fetch the merged state, derive the version from the manifest, and tag that exact commit—never an unmerged feature branch:
 
    ```bash
+   release_version=$(python3 -c 'import json; print(json.load(open("skills/deep-review/.claude-plugin/plugin.json"))["version"])')
    git fetch origin main
-   git tag -a v1.0.0 origin/main -m "Deep Review 1.0.0"
-   git push origin v1.0.0
+   git tag -a "v$release_version" origin/main -m "Deep Review $release_version"
+   git push origin "v$release_version"
    ```
 
-   Replace `1.0.0` with the manifest version for later releases.
-
-8. Open the GitLab pipeline for that tag and manually run `prepare_claude_submission`. The job accepts only a semantic-version tag, requires it to be annotated, verifies that it matches the manifest version, reruns the Python suite and Claude's strict validator, and produces a checksummed archive directly from the tagged plugin tree. It never creates or pushes a tag and never submits the plugin.
+8. Open the GitLab pipeline for that tag and manually run `prepare_claude_submission`. The job accepts only a protected semantic-version tag, requires it to be annotated, verifies that its commit belongs to `main` and matches the manifest version, reruns the Python suite and Claude's strict validator, and produces a checksummed archive directly from the tagged plugin tree. It never creates or pushes a tag and never submits the plugin.
 
 9. Submit or update the plugin through the [Claude Console submission form](https://platform.claude.com/plugins/submit). Identify the repository as `https://gitlab.com/hubertgajewski-ai/deep-review.git` and the plugin subdirectory as `skills/deep-review`. Record the submission status or resulting `claude-community` catalog link in the release issue. Anthropic currently documents only the in-app submission forms, so this remains an explicit manual maintainer action.
 
