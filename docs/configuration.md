@@ -35,7 +35,16 @@ Deep Review reports original and effective description character counts whenever
 
 Every complete reviewer model turn is limited to 120,000 UTF-8 bytes. Initial inline prompts use at most 96,000 bytes, leaving a metered 24,000-byte reserve for safe context reads. Package-owned ceilings also bound chunks per agent and review, total prompt bytes and model calls, concurrency, result bodies, and persistent cache records. Plans over a ceiling fail closed before dispatch.
 
-When required normal, high-risk, or full-review hunks do not fit one inline prompt, Deep Review deterministically splits them into bounded chunks while repeating the complete changed-file manifest and immutable review identity. Independent chunks can surface blockers but cannot prove relationships across separated hunks. Until a bounded synthesis protocol is defined, a multi-chunk logical reviewer is reported `incomplete` and cannot produce `ready`; a single bounded chunk retains the normal readiness path.
+When required normal, high-risk, or full-review hunks do not fit one inline prompt, Deep Review deterministically splits them into bounded chunks while repeating the complete changed-file manifest and immutable review identity. Each multi-chunk reviewer returns credential-redacted, schema-valid bounded handoffs containing findings and a small set of repository-relative relationship facts. A package-owned synthesis turn can compare those facts without receiving a raw diff or unrestricted repository access. Successful exact-coverage synthesis may contribute to `ready`; missing, malformed, or over-budget synthesis fails closed, while any already validated blocker still takes precedence. A single bounded chunk retains the direct result, readiness, and cache path without a synthesis call.
+
+Synthesis is non-configurable and resource-bounded: at most 16 chunks enter one
+synthesis input, the canonical input is at most 72,000 UTF-8 bytes, the complete
+inline prompt is at most 96,000 bytes, the result is at most 12,000 bytes, one retry
+is allowed, and synthesis performs no context reads. Deep Review reserves these
+calls and bytes before chunk dispatch and repeats the complete chunk-and-synthesis
+plan with reuse disabled when a final guard is required. The full runtime schemas
+and cache identities are documented in the
+[bounded synthesis contract](../skills/deep-review/references/synthesis.md).
 
 ## Iteration limit
 

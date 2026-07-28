@@ -116,6 +116,23 @@ class KeyTests(unittest.TestCase):
             "checklist_hash": digest("checklist-two"),
             "references_hash": digest("references-two"),
             "scoped_prompt_hash": digest("prompt-two"),
+            "synthesis": {
+                "required": True,
+                "protocol_version": 1,
+                "prompt_hash": digest("synthesis-prompt"),
+                "schema_hash": digest("synthesis-schema"),
+                "input_hash": digest("synthesis-input"),
+                "chunks": [
+                    {
+                        "chunk_id": digest("chunk-1"),
+                        "handoff_hash": digest("handoff-1"),
+                    },
+                    {
+                        "chunk_id": digest("chunk-2"),
+                        "handoff_hash": digest("handoff-2"),
+                    },
+                ],
+            },
             "dependencies_complete": False,
             "dependencies": [{"path": "src/example.py", "hash": digest("dependency-two")}],
         }
@@ -130,6 +147,8 @@ class KeyTests(unittest.TestCase):
 
     def test_effective_description_and_chunk_plan_invalidate_cache_identity(self) -> None:
         original = manifest()
+        self.assertNotIn("synthesis", original)
+        CACHE.validate_key_manifest(original)
         original["description_hash"] = digest("effective description")
         original["scoped_prompt_hash"] = digest("chunks:1,2,3")
         original_key = CACHE.sha256_bytes(CACHE.canonical_bytes(original))
@@ -145,6 +164,113 @@ class KeyTests(unittest.TestCase):
         self.assertNotEqual(
             CACHE.sha256_bytes(CACHE.canonical_bytes(changed_plan)), original_key
         )
+
+    def test_synthesis_contract_changes_invalidate_cache_identity(self) -> None:
+        original = manifest()
+        original["synthesis"] = {
+            "required": True,
+            "protocol_version": 1,
+            "prompt_hash": digest("synthesis-prompt"),
+            "schema_hash": digest("synthesis-schema"),
+            "input_hash": digest("synthesis-input"),
+            "chunks": [
+                {"chunk_id": digest("chunk-1"), "handoff_hash": digest("handoff-1")},
+                {"chunk_id": digest("chunk-2"), "handoff_hash": digest("handoff-2")},
+            ],
+        }
+        original_key = CACHE.sha256_bytes(CACHE.canonical_bytes(original))
+
+        mutations = {
+            "prompt": {"prompt_hash": digest("synthesis-prompt-2")},
+            "schema": {"schema_hash": digest("synthesis-schema-2")},
+            "input": {"input_hash": digest("synthesis-input-2")},
+            "order": {"chunks": list(reversed(original["synthesis"]["chunks"]))},
+            "handoff": {
+                "chunks": [
+                    {
+                        "chunk_id": digest("chunk-1"),
+                        "handoff_hash": digest("handoff-1-changed"),
+                    },
+                    {
+                        "chunk_id": digest("chunk-2"),
+                        "handoff_hash": digest("handoff-2"),
+                    },
+                ]
+            },
+        }
+        for name, replacement in mutations.items():
+            with self.subTest(name=name):
+                changed = dict(original)
+                changed["synthesis"] = {**original["synthesis"], **replacement}
+                CACHE.validate_key_manifest(changed)
+                self.assertNotEqual(
+                    CACHE.sha256_bytes(CACHE.canonical_bytes(changed)),
+                    original_key,
+                )
+
+    def test_synthesis_identity_rejects_malformed_and_single_chunk_values(self) -> None:
+        valid = manifest()
+        cases = (
+            None,
+            {
+                "required": False,
+                "protocol_version": 1,
+                "prompt_hash": "",
+                "schema_hash": "",
+                "input_hash": "",
+                "chunks": [],
+            },
+            {
+                "required": True,
+                "protocol_version": 2,
+                "prompt_hash": digest("p"),
+                "schema_hash": digest("s"),
+                "input_hash": digest("i"),
+                "chunks": [],
+            },
+            {
+                "required": True,
+                "protocol_version": 1,
+                "prompt_hash": digest("p"),
+                "schema_hash": digest("s"),
+                "input_hash": digest("i"),
+                "chunks": [{"chunk_id": digest("one"), "handoff_hash": digest("h")}],
+            },
+            {
+                "required": True,
+                "protocol_version": 1,
+                "prompt_hash": digest("p"),
+                "schema_hash": digest("s"),
+                "input_hash": digest("i"),
+                "chunks": [
+                    {"chunk_id": digest("same"), "handoff_hash": digest("h1")},
+                    {"chunk_id": digest("same"), "handoff_hash": digest("h2")},
+                ],
+            },
+        )
+        for synthesis in cases:
+            with self.subTest(synthesis=synthesis), self.assertRaises(CACHE.CacheError):
+                CACHE.validate_key_manifest({**valid, "synthesis": synthesis})
+
+        synthesized = {
+            "required": True,
+            "protocol_version": 1,
+            "prompt_hash": digest("p"),
+            "schema_hash": digest("s"),
+            "input_hash": digest("i"),
+            "chunks": [
+                {"chunk_id": digest("one"), "handoff_hash": digest("h1")},
+                {"chunk_id": digest("two"), "handoff_hash": digest("h2")},
+            ],
+        }
+        with self.assertRaisesRegex(CACHE.CacheError, "complete dependencies"):
+            CACHE.validate_key_manifest(
+                {
+                    **valid,
+                    "synthesis": synthesized,
+                    "dependencies_complete": False,
+                }
+            )
 
 
 class BlockingPolicyTests(unittest.TestCase):

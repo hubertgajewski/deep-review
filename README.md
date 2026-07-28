@@ -9,7 +9,7 @@ Deep Review is a configurable, review-only Agent Skill that coordinates speciali
 - Adds language-semantic review for supported file types.
 - Reports findings with consistent severities and returns `ready`, `blocked`, or `incomplete`.
 - Reuses validated nonblocking results during repeated fix-and-review loops while requiring a fresh final guard before reporting readiness.
-- Bounds contributor-controlled descriptions, model turns, context reads, dispatch work, results, and cache records; oversized required hunks are reviewed in chunks but cannot produce readiness without bounded cross-chunk synthesis.
+- Bounds contributor-controlled descriptions, model turns, context reads, dispatch work, results, synthesis, and cache records; oversized required hunks use credential-redacted handoffs and bounded cross-chunk synthesis before they can contribute to readiness.
 - Redacts recognized credential values from reviewer findings before validation, aggregate output, temporary storage, and persistent caching while preserving actionable type and location evidence.
 
 ## Important boundaries

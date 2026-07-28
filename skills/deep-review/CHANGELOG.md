@@ -2,6 +2,14 @@
 
 All notable changes to the Deep Review plugin are documented in this file. Releases follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Resource-bounded cross-chunk synthesis with credential-redacted handoffs, exact
+  coverage validation, fail-closed aggregation, synthesis-aware cache identities,
+  and fresh final-guard reruns.
+
 ## [1.0.0] - 2026-07-22
 
 ### Added

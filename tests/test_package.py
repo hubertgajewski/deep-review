@@ -32,6 +32,7 @@ class PackageTests(unittest.TestCase):
             "references/output-schemas.md",
             "references/prompt-budgets.md",
             "references/scope-resolution.md",
+            "references/synthesis.md",
             "references/providers/github.md",
             "references/providers/gitlab.md",
         ]
@@ -283,6 +284,7 @@ class PackageTests(unittest.TestCase):
         scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
         orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
         budgets = (SKILL / "references" / "prompt-budgets.md").read_text(encoding="utf-8")
+        synthesis = (SKILL / "references" / "synthesis.md").read_text(encoding="utf-8")
         schemas = (SKILL / "references" / "output-schemas.md").read_text(encoding="utf-8")
         user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
 
@@ -358,7 +360,7 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Charge every reserved turn at the full `PROMPT_MAX_UTF8_BYTES`", budgets)
         self.assertIn("repeated conversation, prior model output, transport metadata", budgets)
         self.assertIn("Before every model call, atomically debit one call", budgets)
-        self.assertIn("Every individual or merged result body", budgets)
+        self.assertIn("Every individual, merged, or synthesized result body", budgets)
         self.assertIn("deterministic non-model operations", budgets)
         self.assertIn("must not be interpolated into another model prompt", budgets)
         self.assertIn("Persistent cache reads and writes", budgets)
@@ -380,17 +382,105 @@ class PackageTests(unittest.TestCase):
 
         self.assertIn("ordered required chunk manifest", budgets)
         self.assertIn("Retry only the failed chunk once", budgets)
-        self.assertIn("Partial or semantically incomplete chunk results are not cached", budgets)
+        self.assertIn("Partial or synthesis-incomplete chunk results are not cached", budgets)
         self.assertIn("scoped_prompt_hash", budgets)
         self.assertIn("derived chunk plan is excluded to avoid a cycle", orchestration)
         self.assertIn("ordered chunk identities instead belong to `scoped_prompt_hash`", orchestration)
         self.assertIn("prompt-coverage: complete", budgets)
         self.assertIn("prompt-coverage: incomplete", budgets)
         self.assertIn("never `ready`", budgets)
-        self.assertIn("defines no bounded synthesis protocol", budgets)
-        self.assertIn("more than one chunk is always semantically incomplete", budgets)
+        self.assertIn("schema-valid synthesis result", budgets)
+        self.assertIn("synthesized cross-chunk blocker", budgets)
         self.assertIn("unsynthesized multi-chunk result", budgets)
         self.assertIn("required chunk", schemas)
+        self.assertIn("[Bounded cross-chunk synthesis](references/synthesis.md)", main)
+
+        synthesis_constants = {
+            name: int(value)
+            for name, value in re.findall(
+                r"^([A-Z][A-Z0-9_]+) = (\d+)$",
+                synthesis,
+                re.MULTILINE,
+            )
+        }
+        self.assertEqual(
+            synthesis_constants,
+            {
+                "SYNTHESIS_PROTOCOL_VERSION": 1,
+                "SYNTHESIS_INPUT_MAX_UTF8_BYTES": 72000,
+                "SYNTHESIS_INLINE_PROMPT_MAX_UTF8_BYTES": 96000,
+                "SYNTHESIS_RESULT_MAX_UTF8_BYTES": 12000,
+                "CHUNK_HANDOFF_MAX_UTF8_BYTES": 4000,
+                "RELATIONSHIP_FACT_MAX_UTF8_BYTES": 512,
+                "MAX_RELATIONSHIP_FACTS_PER_CHUNK": 12,
+                "MAX_SYNTHESIS_CHUNKS_PER_AGENT": 16,
+                "MAX_SYNTHESIS_CALLS_PER_AGENT": 2,
+                "MAX_SYNTHESIS_RETRIES_PER_AGENT": 1,
+                "MAX_SYNTHESIS_TURNS_PER_ATTEMPT": 1,
+                "MAX_SYNTHESIS_CONTEXT_READS": 0,
+            },
+        )
+        self.assertLessEqual(
+            synthesis_constants["SYNTHESIS_INPUT_MAX_UTF8_BYTES"],
+            synthesis_constants["SYNTHESIS_INLINE_PROMPT_MAX_UTF8_BYTES"],
+        )
+        self.assertLessEqual(
+            synthesis_constants["SYNTHESIS_INLINE_PROMPT_MAX_UTF8_BYTES"],
+            constants["PROMPT_MAX_UTF8_BYTES"],
+        )
+        self.assertEqual(
+            synthesis_constants["SYNTHESIS_RESULT_MAX_UTF8_BYTES"],
+            constants["RESULT_MAX_UTF8_BYTES"],
+        )
+        cache_script = (SKILL / "scripts" / "cache.py").read_text(encoding="utf-8")
+        for name in (
+            "SYNTHESIS_PROTOCOL_VERSION",
+            "MAX_SYNTHESIS_CHUNKS_PER_AGENT",
+        ):
+            match = re.search(rf"^{name} = ([\d_]+)$", cache_script, re.MULTILINE)
+            self.assertIsNotNone(match)
+            assert match is not None
+            self.assertEqual(
+                int(match.group(1).replace("_", "")),
+                synthesis_constants[name],
+            )
+
+        for schema_name in ("ChunkEvidence", "ChunkHandoff", "SynthesisResult"):
+            self.assertIn(schema_name, synthesis)
+        self.assertIn("one-chunk logical reviewer", synthesis)
+        self.assertIn("does not create a handoff or make a synthesis call", synthesis)
+        self.assertIn("omit `synthesis` from the cache key manifest", synthesis)
+        self.assertIn("existing single-chunk canonical key shape", synthesis)
+        self.assertIn("One oversized file", synthesis)
+        self.assertIn("files split across chunks", synthesis)
+        self.assertIn("contiguous, non-overlapping, gap-free coverage", synthesis)
+        self.assertIn("no repository or context reads", synthesis)
+        self.assertIn("canonical\ninput and trusted prompt", synthesis)
+        self.assertIn("Reserve synthesis before dispatching any chunk", synthesis)
+        self.assertIn("clean, valid synthesis result", synthesis)
+        self.assertIn("cross-chunk finding", synthesis)
+        self.assertIn("Validated chunk blockers retain precedence", synthesis)
+        self.assertIn("warning: review evidence incomplete", synthesis)
+        for failure in (
+            "Malformed identity",
+            "timeout",
+            "unavailable synthesis capability",
+            "budget exhaustion",
+            "two failed attempts",
+        ):
+            self.assertIn(failure, synthesis)
+        for identity in (
+            "protocol_version",
+            "prompt_hash",
+            "schema_hash",
+            "input_hash",
+            "chunk_id",
+            "handoff_hash",
+        ):
+            self.assertIn(identity, synthesis)
+        self.assertIn("sorted union of every handoff's", synthesis)
+        self.assertIn("rerun every required chunk and the", synthesis)
+        self.assertIn("synthesis stage with reuse disabled", synthesis)
 
         workflow_steps = [
             int(number)
@@ -399,7 +489,6 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(workflow_steps, list(range(1, 10)))
         self.assertNotIn("### 4b.", main)
 
-        cache_script = (SKILL / "scripts" / "cache.py").read_text(encoding="utf-8")
         result_script = (SKILL / "scripts" / "result_processing.py").read_text(
             encoding="utf-8"
         )
