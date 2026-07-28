@@ -4,6 +4,11 @@ Deep Review is a review-only Agent Skill that coordinates specialized reviewers 
 
 Deep Review does not edit consumer source files. A `ready` result means the configured review completed without blockers; it does not claim that builds, tests, or linters passed.
 
+Oversized reviewer scopes are split deterministically. Multi-chunk reviewers use
+bounded, credential-redacted handoffs and a package-owned synthesis stage to check
+cross-chunk relationships without passing an unbounded raw diff. Synthesis failure
+remains fail-closed; single-chunk reviews do not pay for an extra model call.
+
 ## Invoke
 
 When Deep Review is loaded locally as a Claude Code plugin, the fully qualified command is:

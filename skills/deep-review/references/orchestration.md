@@ -64,7 +64,7 @@ Follow [Prompt budgets and coverage](prompt-budgets.md) after bucketing and per-
 
 One huge file is split at hunk, line, and finally Unicode-code-point boundaries without gaps. Several huge files retain accepted manifest and per-file block order. Full-review mode uses the same chunker rather than requiring all content in one invocation. Every chunk repeats trusted framing, complete `CHANGED_FILES`, and immutable reviewed-state identity.
 
-Treat chunks as required evidence belonging to one logical roster agent. Validate each bounded output, merge valid findings by the schema-specific rules, and report global valid/required chunk counts. Independent chunk findings are not semantic synthesis: until a package-defined bounded synthesis protocol exists, any logical agent requiring multiple chunks remains incomplete even when all transport chunks returned. Missing, over-budget, unavailable, or unsynthesized evidence produces `incomplete` unless another valid chunk has a configured blocker, in which case the aggregate remains `blocked` with an incomplete-evidence warning. Only semantically complete logical-agent results are eligible for caching or readiness.
+Treat chunks as required evidence belonging to one logical roster agent. Validate each bounded output, merge valid findings by the schema-specific rules for blocker preservation, and report global valid/required chunk and synthesis counts. Independent chunk findings are not semantic synthesis. When multiple chunks validate, run the package-owned [Bounded cross-chunk synthesis](synthesis.md) stage over their redacted bounded handoffs. Missing, over-budget, unavailable, malformed, or coverage-incomplete synthesis produces `incomplete` unless a valid chunk already has a configured blocker, in which case the aggregate remains `blocked` with an incomplete-evidence warning. Only a valid single-chunk or synthesized logical-agent result is eligible for caching or readiness.
 
 ## Cache keys and iterations
 
@@ -96,15 +96,25 @@ blocking_policy: canonical schema-native array
 checklist_hash
 references_hash
 scoped_prompt_hash
+synthesis:
+  required
+  protocol_version
+  prompt_hash
+  schema_hash
+  input_hash
+  chunks: ordered chunk_id and handoff_hash pairs
 dependencies_complete
 dependencies: sorted path and content-hash pairs
 ```
 
-Use empty strings for non-applicable remote fields. Never omit required names. Compute SHA-256 over canonical UTF-8 JSON.
+Use empty strings for non-applicable remote fields. Never omit required names.
+`synthesis` is conditionally required only for a synthesized multi-chunk result and
+must be absent for a single-chunk result, preserving the existing single-chunk key
+shape. Compute SHA-256 over canonical UTF-8 JSON.
 
 For a language agent, `agent_prompt_hash` covers the exact effective base prompt plus enabled rule fragments in canonical declared order. The existing `config_hash` covers the complete trusted configuration. `blocking_policy` stores the normalized effective policy used for that agent's current aggregation (`HIGH`, `MEDIUM`, and/or `LOW` for H/M/L; `fail` for checklist). A configuration, extension declaration, effective policy, or enabled-fragment change therefore invalidates every affected key. The explicit policy field also prevents a cache record from being reclassified under different policy.
 
-`description_hash` is the hash of the exact effective, frame-tag-encoded description bytes propagated to every chunk, including the exact empty value when omitted. `scoped_prompt_hash` is the SHA-256 of canonical JSON containing the ordered hashes of every exact complete chunk prompt and the ordered chunk identities. It therefore commits the cache record to description propagation, one huge file or several huge files, deterministic chunk order, complete-manifest framing, and effective full-review coverage. Package policy and budget-contract changes are covered separately by `orchestrator_hash`.
+`description_hash` is the hash of the exact effective, frame-tag-encoded description bytes propagated to every chunk, including the exact empty value when omitted. `scoped_prompt_hash` is the SHA-256 of canonical JSON containing the ordered hashes of every exact complete chunk prompt and the ordered chunk identities. It therefore commits the cache record to description propagation, one huge file or several huge files, deterministic chunk order, complete-manifest framing, and effective full-review coverage. The `synthesis` object follows the exact identity contract in [Bounded cross-chunk synthesis](synthesis.md): synthesized multi-chunk records include the protocol, prompt, schema, canonical input, and ordered chunk/handoff identities; single-chunk records omit it. Package policy and budget-contract changes are covered separately by `orchestrator_hash`.
 
 Build the convergence `scope_key` only from stable request identity:
 
@@ -116,9 +126,9 @@ Build the convergence `scope_key` only from stable request identity:
 
 Exclude base/head revisions, diff and description hashes, untracked identities, bucket coverage, and effective full-review state from `scope_key`; include all changing reviewed content in `reviewed_state_hash`. The reviewed-state hash includes the exact effective description hash, accepted diff and untracked identities, and bucket/full-review coverage. The derived chunk plan is excluded to avoid a cycle because every `chunk_id` already commits to `reviewed_state_hash`; ordered chunk identities instead belong to `scoped_prompt_hash`. This keeps one fix/review sequence stable while its reviewed state changes.
 
-Persist one latest complete logical-agent record per agent. A record stores the key, classification (`nonblocking`, `blocking`, or `incomplete`), iteration, merged result body, summary counts, and timestamp. It never stores raw scope input, individual chunk prompts, or partial chunk results separately. Derive classification from the validated merged result counts and the manifest's effective `blocking_policy`; do not trust a caller-provided classification. `cache.py store` performs this derivation and rejects an optional asserted classification when it disagrees. Lookup revalidates the merged result and recomputes classification, so a tampered or stale label makes the cache unavailable rather than changing readiness.
+Persist one latest complete logical-agent record per agent. A record stores the key, classification (`nonblocking` or `blocking`), iteration, final single-chunk or synthesized result body, summary counts, and timestamp. It never stores raw scope input, individual chunk prompts, handoffs, raw synthesis output, or partial chunk results separately. Derive classification from the validated final result counts and the manifest's effective `blocking_policy`; do not trust a caller-provided classification. `cache.py store` performs this derivation and rejects an optional asserted classification when it disagrees. Lookup revalidates the final result and recomputes classification, so a tampered or stale label makes the cache unavailable rather than changing readiness.
 
-The record also stores the validated canonical key manifest, including its sorted dependency identities. On a later invocation, use `cache.py probe` to obtain only a structurally and schema-validated prior manifest, re-hash its dependency paths from the immutable reviewed-head context rather than the caller's checkout, construct the complete candidate key, and use `cache.py lookup` for an exact match. Treat exit code 3 as a miss. Treat corrupt, unreadable, or unwritable cache, including JSON that is not valid UTF-8, as unavailable and run required agents fresh; keep the current invocation's iteration state in memory. Invalid UTF-8 in caller-provided result or key-manifest inputs must produce the same concise `cache error` diagnostic as other unreadable input, without a traceback.
+The record also stores the validated canonical key manifest, including its sorted dependency identities. On a later invocation, use `cache.py probe` to obtain only a structurally and schema-validated prior manifest and re-hash its dependency paths from the immutable reviewed-head context rather than the caller's checkout. Recompute every deterministic key field. For a synthesized record, follow the evidence-attestation lookup rule in [Bounded cross-chunk synthesis](synthesis.md): only after all deterministic pre-synthesis fields and dependencies match may the candidate copy the probed manifest's validated `input_hash` and ordered `handoff_hash` values. Construct the complete candidate key and use `cache.py lookup` for an exact match; never rerun chunks merely to reconstruct output-derived lookup fields. Treat exit code 3 as a miss. Treat corrupt, unreadable, or unwritable cache, including JSON that is not valid UTF-8, as unavailable and run required agents fresh; keep the current invocation's iteration state in memory. Invalid UTF-8 in caller-provided result or key-manifest inputs must produce the same concise `cache error` diagnostic as other unreadable input, without a traceback.
 
 Persist at most 64 records keyed by scope identity, with reviewed-state hash, iteration, generation, last aggregate status, and whether reuse or targeted reruns occurred. `cache.py` serializes each read-modify-write transition under a cross-platform lock. When capacity is reached, evict the least-recently-updated completed record: either `ready` or terminal iteration-3 `blocked`/`incomplete`. Never evict an active iteration-1 or iteration-2 `blocked`/`incomplete` state. If no completed record is evictable, disable persistence for the new scope and keep its state in memory. Pass `--scope-key` to `state-read` when more than one record exists. Rules:
 
@@ -141,7 +151,7 @@ Starting a new sequence resets only its iteration and guard-history flags. It do
 
 ## Final guard
 
-Require the guard when any current convergence sequence used a reused result or ran only targeted agents. Rebuild triggers, chunk plans, prompt frames, and the complete resource plan; disable reuse; and run every required chunk for all currently matching agents only within the remaining per-review budgets. Ensure required large-diff, prompt-chunk, and semantic coverage are complete. Fresh guard output supersedes prior cached output.
+Require the guard when any current convergence sequence used a reused result or ran only targeted agents. Rebuild triggers, chunk plans, prompt frames, synthesis plans, and the complete resource plan; disable reuse; and run every required chunk plus every required synthesis stage for all currently matching agents only within the remaining per-review budgets. Ensure required large-diff, prompt-chunk, synthesis, dependency, and semantic coverage are complete. Fresh guard output supersedes prior cached output.
 
 The guard does not advance iteration and is never reported as iteration four. If it
 blocks, persist `blocked` at the current iteration and wait for a changed reviewed state.

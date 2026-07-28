@@ -16,7 +16,8 @@ Read these references before dispatching:
 3. [Agent contract](references/agent-contract.md)
 4. [Output schemas](references/output-schemas.md)
 5. [Prompt budgets and coverage](references/prompt-budgets.md)
-6. [Orchestration](references/orchestration.md)
+6. [Bounded cross-chunk synthesis](references/synthesis.md)
+7. [Orchestration](references/orchestration.md)
 
 For remote review, also read the matching provider reference:
 
@@ -122,7 +123,7 @@ Report bucket counts, threshold, and partial/full coverage state.
 
 Follow [Prompt budgets and coverage](references/prompt-budgets.md). Plan prompts independently for each logical agent after its exact trusted bundle, complete manifest, effective description, focus, and scoped diff are known. Deterministically chunk oversized required content, reserve the bounded context-read allowance, and measure every final prompt's UTF-8 bytes before dispatch. Never omit required hunks to fit the limit.
 
-Record the ordered required chunk manifest and validate the complete plan against package chunk-count, total prompt-byte, model-call, concurrency, result, and cache ceilings before dispatch. Every chunk carries immutable reviewed-state identity and the complete changed-file manifest. If fixed framing alone exceeds the hard limit, a plan exceeds a resource ceiling, or a valid bounded chunk plan cannot be constructed, mark that agent evidence unavailable and prevent readiness. Until the package defines bounded cross-chunk synthesis, any logical agent requiring more than one chunk remains semantically incomplete and cannot produce `ready`.
+Record the ordered required chunk manifest and validate the complete plan against package chunk-count, total prompt-byte, model-call, concurrency, result, synthesis, and cache ceilings before dispatch. Every chunk carries immutable reviewed-state identity and the complete changed-file manifest. If fixed framing alone exceeds the hard limit, a plan exceeds a resource ceiling, or a valid bounded chunk and synthesis plan cannot be constructed, mark that agent evidence unavailable and prevent readiness. A logical agent requiring more than one chunk follows [Bounded cross-chunk synthesis](references/synthesis.md); only a schema-valid synthesized result with exact coverage and complete dependencies can contribute to `ready`.
 
 ### 6. Match and dispatch agents
 
@@ -165,15 +166,15 @@ First iteration: dispatch every matching agent. Later changed iterations:
 4. Rerun agents whose complete key or dependencies changed.
 5. Reuse only schema-valid nonblocking results with complete unchanged dependencies.
 
-The key manifest must include every identity required by [Orchestration](references/orchestration.md). Store or reuse only a schema-valid logical-agent result with complete required chunk coverage. Never persist partial chunk output or reuse `UNAVAILABLE`, malformed, dependency-incomplete, or blocking output after the reviewed state changes.
+The key manifest must include every identity required by [Orchestration](references/orchestration.md). Store or reuse only a schema-valid logical-agent result with complete required chunk coverage and, for a multi-chunk agent, a valid synthesis identity. Never persist partial chunk output or reuse `UNAVAILABLE`, malformed, dependency-incomplete, synthesis-incomplete, or blocking output after the reviewed state changes.
 
-Probe a prior record only to recover its validated dependency paths, then hash those paths at the current reviewed state and require an exact recomputed key match. Validate the cached schema and summary again on every lookup. A corrupt, unreadable, or unwritable cache is a hard cache miss, never a failed review: report `cache: unavailable`, keep convergence state in memory for this invocation, and run every required agent fresh.
+Probe a prior record to recover its validated dependency paths and, only for a synthesized record, its bounded evidence-attestation fields. Hash dependency paths at the current reviewed state and recompute every deterministic key field. After those fields match, apply the synthesis contract's rule for copying prior validated input and handoff hashes into the candidate key; do not rerun chunks merely to recreate output-derived lookup fields. Validate the cached schema and summary again on every lookup. A corrupt, unreadable, or unwritable cache is a hard cache miss, never a failed review: report `cache: unavailable`, keep convergence state in memory for this invocation, and run every required agent fresh.
 
 When the reviewed state is identical to a cached blocked state, re-emit the blocker without a model call and do not increment the iteration.
 
 ### 8. Validate and aggregate
 
-Capture each bounded raw result only in private orchestrator memory, then apply the package credential-redaction boundary and validate the redacted result using [Output schemas](references/output-schemas.md). Pass raw bodies to `scripts/process_result.py` only through standard input; never place them in command arguments, logs, diagnostics, or temporary files. If that helper is unavailable, perform the exact equivalent deterministic operation in memory or suppress the result as `UNAVAILABLE`. Only redacted bodies may be merged, aggregated, printed, or persisted. Recount every redacted result; count drift is malformed output. For a language agent, also require every finding category to be one of that invocation's enabled namespaced rule IDs. A disabled or unknown rule category is malformed and prevents readiness.
+Capture each bounded raw result only in private orchestrator memory, then apply the package credential-redaction boundary and validate the redacted result using [Output schemas](references/output-schemas.md). Pass raw bodies to `scripts/process_result.py` only through standard input; never place them in command arguments, logs, diagnostics, or temporary files. If that helper is unavailable, perform the exact equivalent deterministic operation in memory or suppress the result as `UNAVAILABLE`. Only redacted bodies may be merged, synthesized, aggregated, printed, or persisted. Recount every redacted result; count drift is malformed output. For a language agent, also require every finding category to be one of that invocation's enabled namespaced rule IDs. A disabled or unknown rule category is malformed and prevents readiness. For multiple chunks, validate bounded handoffs and the synthesized logical-agent result under [Bounded cross-chunk synthesis](references/synthesis.md); never interpolate raw chunk bodies or diffs into the synthesis prompt.
 
 Classify every validated result with the same retained effective per-agent blocking
 policy used in its key manifest. Do not separately reinterpret extension frontmatter or
@@ -187,7 +188,7 @@ status: ready|blocked|incomplete
 iterations: <N>/3
 dispatch: fresh <N> / reused <N> / skipped <N> / unavailable <N>
 large-diff: inactive|partial|full
-prompt-coverage: complete (<valid>/<required> chunks)|incomplete (<valid>/<required> chunks; <unavailable chunks or multi-chunk synthesis unavailable>)
+prompt-coverage: complete (<valid>/<required> chunks; synthesis <valid>/<required>)|incomplete (<valid>/<required> chunks; synthesis <valid>/<required>; <reason>)
 final-guard: yes|no
 ```
 
@@ -201,7 +202,7 @@ Status rules:
 
 The caller decides what to fix. After a changed reviewed state, advance the persisted iteration. Stop after three changed iterations and return the remaining findings; do not start a fourth iteration automatically. That `3/3` result completes the current convergence sequence. If the caller later explicitly invokes `deep-review` after changing the reviewed code, begin a new sequence at iteration 1 by passing orchestrator-owned `cache.py state --start-new-sequence`; never pass that flag for an automatic continuation. The user does not manage this transition, and eligible agent-result cache records remain intact. An unchanged invocation remains at `3/3` and may re-emit validated cached blockers without a model call.
 
-If any result was reused or the iteration used targeted reruns and the aggregate is about to become `ready`, disable reuse and dispatch every currently matching agent against the complete current required scope. This guard is not a fourth iteration. Only its fresh results may produce `ready`.
+If any result was reused or the iteration used targeted reruns and the aggregate is about to become `ready`, disable reuse and dispatch every currently matching agent against the complete current required scope. Rerun every multi-chunk synthesis stage with reuse disabled after its fresh chunks validate. This guard is not a fourth iteration. Only its fresh single-chunk or synthesized logical-agent results may produce `ready`.
 
 Before dispatch, read and retain the current scope-state generation when one exists. Supply it as `cache.py state --expected-generation <observed>` for every update to that scope; on a generation mismatch, discard the stale result and rebuild against current state. Before a fresh guard, retain both that generation and the reviewed-state hash. After it completes, persist the same hash with `cache.py state --final-guard-run --expected-generation <observed>` so the guard cannot advance the iteration or clear flags for a different or concurrently changed state. If the guard finds a blocker, return `blocked`. Wait for another caller change before any further review iteration.
 

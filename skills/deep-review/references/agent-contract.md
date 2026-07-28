@@ -16,6 +16,13 @@ Every core and consumer agent must:
 
 Read dependencies are orchestrator-owned transport metadata, never lines in the agent's result body. When the host exposes complete read tracing, the orchestrator captures the sorted repository-relative paths read outside the inline prompt and hashes them at the normalized reviewed-state snapshot. If tracing is unavailable or incomplete, the orchestrator marks the result cache-ineligible. Generic agents continue to emit only their exact result schema.
 
+For a multi-chunk logical reviewer, the orchestrator wraps that declared result body
+in the private `ChunkEvidence` transport defined by
+[Bounded cross-chunk synthesis](synthesis.md). The only additional reviewer-owned
+fields are bounded relationship facts and the completeness attestation. This does
+not create another finding schema or ownership boundary. Single-chunk output remains
+the exact declared result schema.
+
 ## Prompt ownership
 
 Core prompts own:

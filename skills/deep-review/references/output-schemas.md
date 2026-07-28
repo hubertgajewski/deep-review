@@ -41,7 +41,16 @@ Then emit:
 summary: <N> pass / <N> fail / <N> N/A
 ```
 
-When failures exist, append exactly one prioritized, consecutively numbered, repository-relative `file:line` action per failed checklist item, in failed-item order. Otherwise append exactly:
+When failures exist, append this exact heading followed by exactly one prioritized,
+consecutively numbered, repository-relative `file:line` action per failed checklist
+item, in failed-item order:
+
+```text
+Failures (in order of priority):
+1. path/to/file:42 perform the required correction
+```
+
+Otherwise append exactly:
 
 ```text
 Failures: none.
@@ -74,7 +83,7 @@ MALFORMED: <schema violation>
 
 `UNAVAILABLE` and `MALFORMED` prevent readiness.
 
-When a logical agent needs multiple bounded prompts, validate each chunk result independently before merging findings under [Prompt budgets and coverage](prompt-budgets.md). A malformed, unavailable, over-budget, or unsynthesized multi-chunk result prevents a complete logical-agent result; never recount only the chunks that happened to return or treat merged findings as cross-chunk semantic synthesis.
+When a logical agent needs multiple bounded prompts, validate each chunk's private evidence independently before preserving findings and building handoffs under [Prompt budgets and coverage](prompt-budgets.md). Only [Bounded cross-chunk synthesis](synthesis.md) can turn those handoffs into a complete logical-agent result. A malformed, unavailable, over-budget, coverage-incomplete, or unsynthesized multi-chunk result prevents completeness; never recount only the chunks that happened to return or treat deterministic finding preservation as cross-chunk semantic synthesis.
 
 ## Aggregate decision
 
@@ -83,7 +92,7 @@ Use the normalized effective per-agent policy from the configuration contract. D
 - H/M/L: HIGH and MEDIUM block; LOW does not.
 - checklist: fail blocks.
 
-After the roster, report `prompt-coverage: complete (<valid>/<required> chunks)` or the incomplete form defined in the prompt-budget contract. Return `blocked` when a blocker exists even if another result or required chunk is unavailable; add `warning: review evidence incomplete`. Return `incomplete` only when no known blocker exists. Never convert unavailable evidence into zero findings or complete coverage.
+After the roster, report the chunk and synthesis counts in the complete or incomplete form defined by the prompt-budget contract. Return `blocked` when a blocker exists even if another result, required chunk, or synthesis stage is unavailable; add `warning: review evidence incomplete`. Return `incomplete` only when no known blocker exists. Never convert unavailable evidence into zero findings or complete coverage.
 
 For a valid complete H/M/L result, classification is `blocking` exactly when at least
 one count selected by that agent's effective H/M/L policy is nonzero. For a valid

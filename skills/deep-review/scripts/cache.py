@@ -47,6 +47,8 @@ HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 MAX_SCOPE_STATES = 64
 CACHE_RECORD_MAX_UTF8_BYTES = 524_288
 MAX_ITERATIONS = 3
+SYNTHESIS_PROTOCOL_VERSION = 1
+MAX_SYNTHESIS_CHUNKS_PER_AGENT = 16
 _MISSING_JSON = object()
 KEY_FIELDS = {
     "schema_version",
@@ -70,6 +72,7 @@ KEY_FIELDS = {
     "dependencies_complete",
     "dependencies",
 }
+OPTIONAL_KEY_FIELDS = {"synthesis"}
 GLOBAL_BLOCKING_ORDER = ("HIGH", "MEDIUM", "LOW", "CHECKLIST_FAIL")
 SCHEMA_BLOCKING_ORDER = {
     "hml": ("HIGH", "MEDIUM", "LOW"),
@@ -388,7 +391,7 @@ def validate_key_manifest(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise CacheError("key manifest must be a JSON object")
     missing = sorted(KEY_FIELDS - value.keys())
-    extra = sorted(value.keys() - KEY_FIELDS)
+    extra = sorted(value.keys() - KEY_FIELDS - OPTIONAL_KEY_FIELDS)
     if missing:
         raise CacheError(f"key manifest missing fields: {', '.join(missing)}")
     if extra:
@@ -415,8 +418,13 @@ def validate_key_manifest(value: Any) -> dict[str, Any]:
     ):
         validate_hash(value[name], name)
     validate_manifest_blocking(value["blocking_policy"])
+    synthesis = value.get("synthesis", _MISSING_JSON)
+    if synthesis is not _MISSING_JSON:
+        validate_synthesis_identity(synthesis)
     if not isinstance(value["dependencies_complete"], bool):
         raise CacheError("dependencies_complete must be boolean")
+    if synthesis is not _MISSING_JSON and not value["dependencies_complete"]:
+        raise CacheError("synthesized cache identity requires complete dependencies")
     dependencies = value["dependencies"]
     if not isinstance(dependencies, list):
         raise CacheError("dependencies must be an array")
@@ -436,6 +444,54 @@ def validate_key_manifest(value: Any) -> dict[str, Any]:
         normalized.append({"path": path, "hash": dependency["hash"]})
     if normalized != sorted(normalized, key=lambda item: item["path"]):
         raise CacheError("dependencies must be sorted by path")
+    return value
+
+
+def validate_synthesis_identity(value: Any) -> dict[str, Any]:
+    required = {
+        "required",
+        "protocol_version",
+        "prompt_hash",
+        "schema_hash",
+        "input_hash",
+        "chunks",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise CacheError("synthesis identity has invalid fields")
+    if not isinstance(value["required"], bool):
+        raise CacheError("synthesis required must be boolean")
+    protocol_version = value["protocol_version"]
+    if isinstance(protocol_version, bool) or not isinstance(protocol_version, int):
+        raise CacheError("synthesis protocol_version must be an integer")
+    chunks = value["chunks"]
+    if not isinstance(chunks, list):
+        raise CacheError("synthesis chunks must be an array")
+
+    if not value["required"]:
+        raise CacheError("single-chunk cache identities must omit synthesis")
+
+    if protocol_version != SYNTHESIS_PROTOCOL_VERSION:
+        raise CacheError(f"unsupported synthesis protocol {protocol_version!r}")
+    for name in ("prompt_hash", "schema_hash", "input_hash"):
+        validate_hash(value[name], f"synthesis {name}")
+    if not 2 <= len(chunks) <= MAX_SYNTHESIS_CHUNKS_PER_AGENT:
+        raise CacheError(
+            "synthesis chunks must contain between 2 and "
+            f"{MAX_SYNTHESIS_CHUNKS_PER_AGENT} identities"
+        )
+    seen_chunk_ids: set[str] = set()
+    seen_handoff_hashes: set[str] = set()
+    for chunk in chunks:
+        if not isinstance(chunk, dict) or set(chunk) != {"chunk_id", "handoff_hash"}:
+            raise CacheError("each synthesis chunk must contain only chunk_id and handoff_hash")
+        validate_hash(chunk["chunk_id"], "synthesis chunk_id")
+        validate_hash(chunk["handoff_hash"], "synthesis handoff_hash")
+        if chunk["chunk_id"] in seen_chunk_ids:
+            raise CacheError(f"duplicate synthesis chunk identity: {chunk['chunk_id']}")
+        if chunk["handoff_hash"] in seen_handoff_hashes:
+            raise CacheError("duplicate synthesis handoff identity")
+        seen_chunk_ids.add(chunk["chunk_id"])
+        seen_handoff_hashes.add(chunk["handoff_hash"])
     return value
 
 

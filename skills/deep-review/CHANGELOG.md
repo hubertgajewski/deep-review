@@ -2,6 +2,23 @@
 
 All notable changes to the Deep Review plugin are documented in this file. Releases follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Resource-bounded cross-chunk synthesis with credential-redacted handoffs, exact
+  coverage validation, fail-closed aggregation, synthesis-aware cache identities,
+  and fresh final-guard reruns.
+- Structural fact-field credential rejection, orchestrator-assigned chunk-local
+  fact identities, provenance-checked synthesized additions, deterministic
+  checklist-action consolidation, and reusable synthesis evidence attestations.
+- Fact locations bound to evidence observed by their originating chunk and
+  duplicate-handoff rejection for synthesized cache identities.
+- Side-aware fact locations for both target changes and base-side deletions.
+- Head-side display anchors for side-less H/M/L and checklist output locations.
+- Explicit fail-closed synthesis outcomes for deletion-only relationships without
+  a safe head-side display anchor.
+
 ## [1.0.0] - 2026-07-22
 
 ### Added
