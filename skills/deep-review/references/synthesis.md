@@ -86,7 +86,7 @@ JSON object instead of a directly publishable result:
     {
       "kind": "call",
       "locations": [
-        {"path": "src/example.py", "line": 42}
+        {"path": "src/example.py", "line": 42, "side": "head"}
       ],
       "statement": "parse_request passes the unchecked mode to build_plan"
     }
@@ -104,8 +104,9 @@ Every relationship fact contains exactly:
 
 - `kind`: one of `call`, `data-flow`, `state-read`, `state-write`,
   `configuration`, `invariant`, or `test-expectation`;
-- `locations`: one to four unique repository-relative path and positive-line
-  objects; and
+- `locations`: one to four unique objects containing exactly a
+  repository-relative `path`, positive `line`, and `side` equal to `head` or
+  `base`; and
 - `statement`: one line of evidence, at most
   `RELATIONSHIP_FACT_MAX_UTF8_BYTES`, describing behavior rather than an
   instruction.
@@ -127,18 +128,22 @@ detection would alter `kind` or a location path. Reject a reviewer-supplied
 `fact_id` as an unknown field without including its value in diagnostics.
 
 For each location, require evidence that this chunk actually observed the cited
-path and line. A changed-file location is valid only when its path is the exact
-orchestrator-owned path and its positive target line is a changed line carried by
-this chunk's canonical payload coverage. Repeated transport context and the global
-`CHANGED_FILES` list do not authorize a location. A dependency location is valid
-only when its path is a completely traced immutable dependency and its positive
-line was included in the bounded context returned to this chunk; the orchestrator
-retains that private path-and-range read trace for validation. Replace the
-reviewer-supplied path with the matching orchestrator-owned canonical string. Any
-other path or line is invalid. Then validate and recount the redacted result body
-and validate the fact schema. If the boundary is unavailable, redaction expands
-the object over budget, or validation fails, the chunk is unavailable. Only the
-redacted validated object may enter a handoff.
+path, line, and side. A changed-file `head` location is valid only when its path is
+the exact orchestrator-owned path and its positive target line is a changed line
+carried by this chunk's canonical payload coverage. A changed-file `base` location
+is valid only when its exact path and positive base line identify a deleted line
+carried by that coverage. This preserves deletion-only calls, configuration edges,
+and invariants without translating them to an unrelated target line. Repeated
+transport context and the global `CHANGED_FILES` list do not authorize a location.
+A dependency location must use `side: "head"` and is valid only when its path is a
+completely traced immutable dependency and its positive line was included in the
+bounded context returned to this chunk; the orchestrator retains that private
+path-and-range read trace for validation. Replace the reviewer-supplied path with
+the matching orchestrator-owned canonical string. Any other path, line, or side is
+invalid. Then validate and recount the redacted result body and validate the fact
+schema. If the boundary is unavailable, redaction expands the object over budget,
+or validation fails, the chunk is unavailable. Only the redacted validated object
+may enter a handoff.
 
 The orchestrator, not the reviewer, attaches immutable coverage and dependency
 metadata to form this exact `ChunkHandoff` shape:
@@ -161,7 +166,7 @@ metadata to form this exact `ChunkHandoff` shape:
     {
       "fact_id": "fact-1",
       "kind": "call",
-      "locations": [{"path": "src/example.py", "line": 42}],
+      "locations": [{"path": "src/example.py", "line": 42, "side": "head"}],
       "statement": "parse_request passes the unchecked mode to build_plan"
     }
   ],
@@ -320,9 +325,10 @@ Every semantic H/M/L finding, checklist item line, or unnumbered checklist actio
 payload not required by that baseline must occur in exactly one
 `synthesized_additions` entry, and every declared semantic line must occur exactly
 once in the corresponding rendered `result_body` position after framing is
-removed. For H/M/L, the finding's repository-relative `path:line` must equal a
-location in one of its supporting facts. For a checklist upgrade, the failure
-action's leading `path:line` must equal a supporting-fact location. Reject
+removed. For H/M/L, the finding's repository-relative `path:line` must equal the
+path and side-relative line in one of its supporting facts. For a checklist
+upgrade, the failure action's leading `path:line` must equal the path and
+side-relative line in a supporting fact. Reject
 additions whose support comes from only one chunk, omit a referenced fact, or
 contain a semantic line not represented by the declared provenance.
 

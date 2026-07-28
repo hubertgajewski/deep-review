@@ -14,6 +14,7 @@ All notable changes to the Deep Review plugin are documented in this file. Relea
   checklist-action consolidation, and reusable synthesis evidence attestations.
 - Fact locations bound to evidence observed by their originating chunk and
   duplicate-handoff rejection for synthesized cache identities.
+- Side-aware fact locations for both target changes and base-side deletions.
 
 ## [1.0.0] - 2026-07-22
 
