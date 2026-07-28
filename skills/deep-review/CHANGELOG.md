@@ -9,9 +9,9 @@ All notable changes to the Deep Review plugin are documented in this file. Relea
 - Resource-bounded cross-chunk synthesis with credential-redacted handoffs, exact
   coverage validation, fail-closed aggregation, synthesis-aware cache identities,
   and fresh final-guard reruns.
-- Structural fact-field credential rejection, chunk-local fact identities,
-  provenance-checked synthesized additions, deterministic checklist-action
-  consolidation, and reusable synthesis evidence attestations.
+- Structural fact-field credential rejection, orchestrator-assigned chunk-local
+  fact identities, provenance-checked synthesized additions, deterministic
+  checklist-action consolidation, and reusable synthesis evidence attestations.
 
 ## [1.0.0] - 2026-07-22
 

@@ -463,8 +463,14 @@ class PackageTests(unittest.TestCase):
         self.assertIn("reject the chunk if credential", synthesis)
         self.assertIn("orchestrator-owned canonical string", synthesis)
         self.assertIn('"synthesized_additions"', synthesis)
+        self.assertIn('"semantic_lines"', synthesis)
+        self.assertIn("reviewer does not supply a fact identifier", synthesis)
+        self.assertIn("`fact-1` through `fact-12`", synthesis)
+        self.assertIn("schema-generated framing", synthesis)
+        self.assertIn("numeric action prefixes", synthesis)
+        self.assertIn("exact separator `; `", synthesis)
         self.assertIn("at least two different handoffs", synthesis)
-        self.assertIn("same item fails in multiple chunks", synthesis)
+        self.assertIn("several chunks fail the same item", synthesis)
         self.assertIn("evidence attestations", synthesis)
         self.assertIn("Handoffs are not", synthesis)
         self.assertIn("Validated chunk blockers retain precedence", synthesis)
@@ -494,6 +500,28 @@ class PackageTests(unittest.TestCase):
         self.assertIn(
             "Failures (in order of priority):",
             schemas,
+        )
+
+        synthesis_result_block = (
+            synthesis.split("## Synthesis result", 1)[1]
+            .split("```json\n", 1)[1]
+            .split("\n```", 1)[0]
+        )
+        synthesis_result_example = json.loads(synthesis_result_block)
+        addition = synthesis_result_example["synthesized_additions"][0]
+        finding = addition["semantic_lines"][0]
+        self.assertEqual(
+            synthesis_result_example["result_body"],
+            f"{finding}\nsummary: 0 high / 1 medium / 0 low\n",
+        )
+        supporting_chunk_ids = {
+            fact["chunk_id"] for fact in addition["supporting_facts"]
+        }
+        self.assertEqual(len(supporting_chunk_ids), 2)
+        self.assertTrue(
+            supporting_chunk_ids.issubset(
+                set(synthesis_result_example["ordered_chunk_ids"])
+            )
         )
 
         workflow_steps = [
