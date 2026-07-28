@@ -325,12 +325,15 @@ Every semantic H/M/L finding, checklist item line, or unnumbered checklist actio
 payload not required by that baseline must occur in exactly one
 `synthesized_additions` entry, and every declared semantic line must occur exactly
 once in the corresponding rendered `result_body` position after framing is
-removed. For H/M/L, the finding's repository-relative `path:line` must equal the
-path and side-relative line in one of its supporting facts. For a checklist
-upgrade, the failure action's leading `path:line` must equal the path and
-side-relative line in a supporting fact. Reject
-additions whose support comes from only one chunk, omit a referenced fact, or
-contain a semantic line not represented by the declared provenance.
+removed. Because the public H/M/L and checklist schemas render a side-less
+`path:line`, that rendered location must equal the path and line of a supporting
+fact whose side is `head`. The same rule applies to a checklist failure action's
+leading `path:line`. Base-side facts remain eligible relationship evidence, but
+never directly authorize a rendered location; a synthesized addition using them
+must also cite a head-side supporting fact as its display anchor. Reject additions
+whose support comes from only one chunk, lack that head-side anchor, omit a
+referenced fact, or contain a semantic line not represented by the declared
+provenance.
 
 The result cannot use any evidence join other than the canonical checklist
 serialization above. It cannot lower severity, remove a failure, change a finding's
