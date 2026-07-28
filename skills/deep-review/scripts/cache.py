@@ -479,15 +479,19 @@ def validate_synthesis_identity(value: Any) -> dict[str, Any]:
             "synthesis chunks must contain between 2 and "
             f"{MAX_SYNTHESIS_CHUNKS_PER_AGENT} identities"
         )
-    seen: set[str] = set()
+    seen_chunk_ids: set[str] = set()
+    seen_handoff_hashes: set[str] = set()
     for chunk in chunks:
         if not isinstance(chunk, dict) or set(chunk) != {"chunk_id", "handoff_hash"}:
             raise CacheError("each synthesis chunk must contain only chunk_id and handoff_hash")
         validate_hash(chunk["chunk_id"], "synthesis chunk_id")
         validate_hash(chunk["handoff_hash"], "synthesis handoff_hash")
-        if chunk["chunk_id"] in seen:
+        if chunk["chunk_id"] in seen_chunk_ids:
             raise CacheError(f"duplicate synthesis chunk identity: {chunk['chunk_id']}")
-        seen.add(chunk["chunk_id"])
+        if chunk["handoff_hash"] in seen_handoff_hashes:
+            raise CacheError("duplicate synthesis handoff identity")
+        seen_chunk_ids.add(chunk["chunk_id"])
+        seen_handoff_hashes.add(chunk["handoff_hash"])
     return value
 
 

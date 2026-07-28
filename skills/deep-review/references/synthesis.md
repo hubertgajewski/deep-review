@@ -126,14 +126,19 @@ structural field cannot be rewritten safely: reject the chunk if credential
 detection would alter `kind` or a location path. Reject a reviewer-supplied
 `fact_id` as an unknown field without including its value in diagnostics.
 
-For each location, require an exact match to a path identity already owned by the
-orchestrator: an accepted `CHANGED_FILES` path or a completely traced dependency
-path in the immutable snapshot. Replace the reviewer-supplied path with that exact
-orchestrator-owned canonical string; a path not in that set is invalid. Then
-validate and recount the redacted result body and validate the fact schema. If the
-boundary is unavailable, redaction expands the object over budget, or validation
-fails, the chunk is unavailable. Only the redacted validated object may enter a
-handoff.
+For each location, require evidence that this chunk actually observed the cited
+path and line. A changed-file location is valid only when its path is the exact
+orchestrator-owned path and its positive target line is a changed line carried by
+this chunk's canonical payload coverage. Repeated transport context and the global
+`CHANGED_FILES` list do not authorize a location. A dependency location is valid
+only when its path is a completely traced immutable dependency and its positive
+line was included in the bounded context returned to this chunk; the orchestrator
+retains that private path-and-range read trace for validation. Replace the
+reviewer-supplied path with the matching orchestrator-owned canonical string. Any
+other path or line is invalid. Then validate and recount the redacted result body
+and validate the fact schema. If the boundary is unavailable, redaction expands
+the object over budget, or validation fails, the chunk is unavailable. Only the
+redacted validated object may enter a handoff.
 
 The orchestrator, not the reviewer, attaches immutable coverage and dependency
 metadata to form this exact `ChunkHandoff` shape:
@@ -187,7 +192,9 @@ Before synthesis, deterministically require:
 5. contiguous, non-overlapping, gap-free coverage from byte zero through the
    canonical scoped-diff length;
 6. exact payload hashes and coverage spans;
-7. schema-valid redacted result bodies and complete relationship facts; and
+7. schema-valid redacted result bodies and complete relationship facts whose
+   locations are bound to each handoff's observed payload or private context-read
+   trace; and
 8. complete, internally consistent dependency identities.
 
 Construct the synthesis input as canonical JSON containing the immutable logical
@@ -350,7 +357,14 @@ identities are complete. The canonical cache key manifest includes this exact
   "schema_hash": "<sha256>",
   "input_hash": "<sha256>",
   "chunks": [
-    {"chunk_id": "<sha256>", "handoff_hash": "<sha256>"}
+    {
+      "chunk_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "handoff_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "chunk_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "handoff_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
   ]
 }
 ```

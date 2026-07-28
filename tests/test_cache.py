@@ -247,6 +247,17 @@ class KeyTests(unittest.TestCase):
                     {"chunk_id": digest("same"), "handoff_hash": digest("h2")},
                 ],
             },
+            {
+                "required": True,
+                "protocol_version": 1,
+                "prompt_hash": digest("p"),
+                "schema_hash": digest("s"),
+                "input_hash": digest("i"),
+                "chunks": [
+                    {"chunk_id": digest("one"), "handoff_hash": digest("same")},
+                    {"chunk_id": digest("two"), "handoff_hash": digest("same")},
+                ],
+            },
         )
         for synthesis in cases:
             with self.subTest(synthesis=synthesis), self.assertRaises(CACHE.CacheError):

@@ -462,6 +462,9 @@ class PackageTests(unittest.TestCase):
         self.assertIn('structural pair `{"chunk_id", "fact_id"}`', synthesis)
         self.assertIn("reject the chunk if credential", synthesis)
         self.assertIn("orchestrator-owned canonical string", synthesis)
+        self.assertIn("changed line carried by", synthesis)
+        self.assertIn("Repeated transport context", synthesis)
+        self.assertIn("private path-and-range read trace", synthesis)
         self.assertIn('"synthesized_additions"', synthesis)
         self.assertIn('"semantic_lines"', synthesis)
         self.assertIn("reviewer does not supply a fact identifier", synthesis)
@@ -522,6 +525,23 @@ class PackageTests(unittest.TestCase):
             supporting_chunk_ids.issubset(
                 set(synthesis_result_example["ordered_chunk_ids"])
             )
+        )
+
+        cache_identity_block = (
+            synthesis.split("## Cache identity and final guard", 1)[1]
+            .split("```json\n", 1)[1]
+            .split("\n```", 1)[0]
+        )
+        cache_identity_example = json.loads(cache_identity_block)
+        cache_chunks = cache_identity_example["chunks"]
+        self.assertGreaterEqual(len(cache_chunks), 2)
+        self.assertEqual(
+            len({chunk["chunk_id"] for chunk in cache_chunks}),
+            len(cache_chunks),
+        )
+        self.assertEqual(
+            len({chunk["handoff_hash"] for chunk in cache_chunks}),
+            len(cache_chunks),
         )
 
         workflow_steps = [
