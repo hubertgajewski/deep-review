@@ -16,6 +16,8 @@ All notable changes to the Deep Review plugin are documented in this file. Relea
   duplicate-handoff rejection for synthesized cache identities.
 - Side-aware fact locations for both target changes and base-side deletions.
 - Head-side display anchors for side-less H/M/L and checklist output locations.
+- Explicit fail-closed synthesis outcomes for deletion-only relationships without
+  a safe head-side display anchor.
 
 ## [1.0.0] - 2026-07-22
 

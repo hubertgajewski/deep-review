@@ -469,6 +469,11 @@ class PackageTests(unittest.TestCase):
         self.assertIn("public H/M/L and checklist schemas render a side-less", synthesis)
         self.assertIn("head-side supporting fact as its display anchor", synthesis)
         self.assertIn("never directly authorize a rendered location", synthesis)
+        self.assertIn('"relationship_resolution_complete": true', synthesis)
+        self.assertIn('"unrenderable_additions": []', synthesis)
+        self.assertIn("no-head-display-anchor", synthesis)
+        self.assertIn("schema-valid fail-closed outcome", synthesis)
+        self.assertIn("whose complete support is deletion-only", synthesis)
         self.assertIn("transport context and the global", synthesis)
         self.assertIn("path-and-range read trace", synthesis)
         self.assertIn('"synthesized_additions"', synthesis)
@@ -518,6 +523,11 @@ class PackageTests(unittest.TestCase):
         )
         synthesis_result_example = json.loads(synthesis_result_block)
         addition = synthesis_result_example["synthesized_additions"][0]
+        self.assertIs(
+            synthesis_result_example["relationship_resolution_complete"],
+            True,
+        )
+        self.assertEqual(synthesis_result_example["unrenderable_additions"], [])
         finding = addition["semantic_lines"][0]
         self.assertEqual(
             synthesis_result_example["result_body"],

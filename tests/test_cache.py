@@ -72,6 +72,20 @@ def manifest(agent: str = "code") -> dict[str, object]:
     }
 
 
+def synthesis_identity() -> dict[str, object]:
+    return {
+        "required": True,
+        "protocol_version": 1,
+        "prompt_hash": digest("synthesis-prompt"),
+        "schema_hash": digest("synthesis-schema"),
+        "input_hash": digest("synthesis-input"),
+        "chunks": [
+            {"chunk_id": digest("chunk-1"), "handoff_hash": digest("handoff-1")},
+            {"chunk_id": digest("chunk-2"), "handoff_hash": digest("handoff-2")},
+        ],
+    }
+
+
 class KeyTests(unittest.TestCase):
     def test_key_is_canonical_and_sensitive_to_dependencies(self) -> None:
         first = CACHE.validate_key_manifest(manifest())
@@ -116,23 +130,7 @@ class KeyTests(unittest.TestCase):
             "checklist_hash": digest("checklist-two"),
             "references_hash": digest("references-two"),
             "scoped_prompt_hash": digest("prompt-two"),
-            "synthesis": {
-                "required": True,
-                "protocol_version": 1,
-                "prompt_hash": digest("synthesis-prompt"),
-                "schema_hash": digest("synthesis-schema"),
-                "input_hash": digest("synthesis-input"),
-                "chunks": [
-                    {
-                        "chunk_id": digest("chunk-1"),
-                        "handoff_hash": digest("handoff-1"),
-                    },
-                    {
-                        "chunk_id": digest("chunk-2"),
-                        "handoff_hash": digest("handoff-2"),
-                    },
-                ],
-            },
+            "synthesis": synthesis_identity(),
             "dependencies_complete": False,
             "dependencies": [{"path": "src/example.py", "hash": digest("dependency-two")}],
         }
@@ -167,17 +165,7 @@ class KeyTests(unittest.TestCase):
 
     def test_synthesis_contract_changes_invalidate_cache_identity(self) -> None:
         original = manifest()
-        original["synthesis"] = {
-            "required": True,
-            "protocol_version": 1,
-            "prompt_hash": digest("synthesis-prompt"),
-            "schema_hash": digest("synthesis-schema"),
-            "input_hash": digest("synthesis-input"),
-            "chunks": [
-                {"chunk_id": digest("chunk-1"), "handoff_hash": digest("handoff-1")},
-                {"chunk_id": digest("chunk-2"), "handoff_hash": digest("handoff-2")},
-            ],
-        }
+        original["synthesis"] = synthesis_identity()
         original_key = CACHE.sha256_bytes(CACHE.canonical_bytes(original))
 
         mutations = {
@@ -263,17 +251,7 @@ class KeyTests(unittest.TestCase):
             with self.subTest(synthesis=synthesis), self.assertRaises(CACHE.CacheError):
                 CACHE.validate_key_manifest({**valid, "synthesis": synthesis})
 
-        synthesized = {
-            "required": True,
-            "protocol_version": 1,
-            "prompt_hash": digest("p"),
-            "schema_hash": digest("s"),
-            "input_hash": digest("i"),
-            "chunks": [
-                {"chunk_id": digest("one"), "handoff_hash": digest("h1")},
-                {"chunk_id": digest("two"), "handoff_hash": digest("h2")},
-            ],
-        }
+        synthesized = synthesis_identity()
         with self.assertRaisesRegex(CACHE.CacheError, "complete dependencies"):
             CACHE.validate_key_manifest(
                 {
@@ -1321,17 +1299,7 @@ class CacheStorageTests(unittest.TestCase):
         result_path = self.root / "result.json"
         manifest_path = self.root / "manifest.json"
         key_manifest = manifest()
-        key_manifest["synthesis"] = {
-            "required": True,
-            "protocol_version": 1,
-            "prompt_hash": digest("synthesis-prompt"),
-            "schema_hash": digest("synthesis-schema"),
-            "input_hash": digest("synthesis-input"),
-            "chunks": [
-                {"chunk_id": digest("chunk-1"), "handoff_hash": digest("handoff-1")},
-                {"chunk_id": digest("chunk-2"), "handoff_hash": digest("handoff-2")},
-            ],
-        }
+        key_manifest["synthesis"] = synthesis_identity()
         manifest_path.write_text(json.dumps(key_manifest), encoding="utf-8")
         key = CACHE.sha256_bytes(CACHE.canonical_bytes(key_manifest))
         result_path.write_text(
