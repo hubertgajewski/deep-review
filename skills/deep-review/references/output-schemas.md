@@ -41,7 +41,16 @@ Then emit:
 summary: <N> pass / <N> fail / <N> N/A
 ```
 
-When failures exist, append exactly one prioritized, consecutively numbered, repository-relative `file:line` action per failed checklist item, in failed-item order. Otherwise append exactly:
+When failures exist, append this exact heading followed by exactly one prioritized,
+consecutively numbered, repository-relative `file:line` action per failed checklist
+item, in failed-item order:
+
+```text
+Failures (in order of priority):
+1. path/to/file:42 perform the required correction
+```
+
+Otherwise append exactly:
 
 ```text
 Failures: none.

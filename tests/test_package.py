@@ -459,6 +459,14 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Reserve synthesis before dispatching any chunk", synthesis)
         self.assertIn("clean, valid synthesis result", synthesis)
         self.assertIn("cross-chunk finding", synthesis)
+        self.assertIn('structural pair `{"chunk_id", "fact_id"}`', synthesis)
+        self.assertIn("reject the chunk if credential", synthesis)
+        self.assertIn("orchestrator-owned canonical string", synthesis)
+        self.assertIn('"synthesized_additions"', synthesis)
+        self.assertIn("at least two different handoffs", synthesis)
+        self.assertIn("same item fails in multiple chunks", synthesis)
+        self.assertIn("evidence attestations", synthesis)
+        self.assertIn("Handoffs are not", synthesis)
         self.assertIn("Validated chunk blockers retain precedence", synthesis)
         self.assertIn("warning: review evidence incomplete", synthesis)
         for failure in (
@@ -481,6 +489,12 @@ class PackageTests(unittest.TestCase):
         self.assertIn("sorted union of every handoff's", synthesis)
         self.assertIn("rerun every required chunk and the", synthesis)
         self.assertIn("synthesis stage with reuse disabled", synthesis)
+        self.assertIn("evidence-attestation lookup rule", orchestration)
+        self.assertIn("not regenerated merely to perform lookup", budgets)
+        self.assertIn(
+            "Failures (in order of priority):",
+            schemas,
+        )
 
         workflow_steps = [
             int(number)

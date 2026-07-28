@@ -1306,6 +1306,64 @@ class CacheStorageTests(unittest.TestCase):
         with self.assertRaises(CACHE.CacheError):
             CACHE.command_lookup(argparse.Namespace(**common))
 
+    def test_probe_preserves_validated_synthesis_evidence_attestations(self) -> None:
+        result_path = self.root / "result.json"
+        manifest_path = self.root / "manifest.json"
+        key_manifest = manifest()
+        key_manifest["synthesis"] = {
+            "required": True,
+            "protocol_version": 1,
+            "prompt_hash": digest("synthesis-prompt"),
+            "schema_hash": digest("synthesis-schema"),
+            "input_hash": digest("synthesis-input"),
+            "chunks": [
+                {"chunk_id": digest("chunk-1"), "handoff_hash": digest("handoff-1")},
+                {"chunk_id": digest("chunk-2"), "handoff_hash": digest("handoff-2")},
+            ],
+        }
+        manifest_path.write_text(json.dumps(key_manifest), encoding="utf-8")
+        key = CACHE.sha256_bytes(CACHE.canonical_bytes(key_manifest))
+        result_path.write_text(
+            json.dumps(
+                {
+                    "body": "findings: none\nsummary: 0 high / 0 medium / 0 low\n",
+                    "summary": {"high": 0, "medium": 0, "low": 0},
+                }
+            ),
+            encoding="utf-8",
+        )
+        common = {
+            "repo_root": str(self.root),
+            "cache_dir": ".deep-review-cache",
+            "agent": "code",
+        }
+        with redirect_stdout(io.StringIO()):
+            CACHE.command_store(
+                argparse.Namespace(
+                    **common,
+                    key=key,
+                    iteration=1,
+                    schema="hml",
+                    manifest=str(manifest_path),
+                    result=str(result_path),
+                )
+            )
+
+        probe = io.StringIO()
+        with redirect_stdout(probe):
+            CACHE.command_probe(argparse.Namespace(**common))
+
+        probed_manifest = json.loads(probe.getvalue())
+        self.assertEqual(probed_manifest, key_manifest)
+        self.assertEqual(
+            probed_manifest["synthesis"]["input_hash"],
+            key_manifest["synthesis"]["input_hash"],
+        )
+        self.assertEqual(
+            probed_manifest["synthesis"]["chunks"],
+            key_manifest["synthesis"]["chunks"],
+        )
+
     def test_store_derives_and_lookup_revalidates_classification(self) -> None:
         result_path = self.root / "result.json"
         manifest_path = self.root / "manifest.json"

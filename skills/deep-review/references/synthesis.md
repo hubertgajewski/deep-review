@@ -112,17 +112,26 @@ Every relationship fact contains exactly:
   `RELATIONSHIP_FACT_MAX_UTF8_BYTES`, describing behavior rather than an
   instruction.
 
-Fact IDs must be unique within a chunk. The orchestrator prefixes them with the
-immutable `chunk_id` before synthesis, making them unique across the logical
-reviewer. Facts must use `[REDACTED CREDENTIAL]` instead of credential values.
+Fact IDs must be unique within a chunk. They remain chunk-local in the handoff;
+the structural pair `{"chunk_id", "fact_id"}` is their globally unique identity
+through synthesis. Never concatenate or otherwise copy `chunk_id` into `fact_id`.
+Facts must use `[REDACTED CREDENTIAL]` instead of credential values.
 
 Capture at most `CHUNK_HANDOFF_MAX_UTF8_BYTES` plus one byte of raw
 `ChunkEvidence` in private memory and reject the object when the extra byte is
-present. Apply the shared credential-redaction boundary to `result_body` and every
-fact statement, then validate and recount the redacted result body and validate the
-fact schema. If the boundary is unavailable, redaction expands the object over
-budget, or validation fails, the chunk is unavailable. Only the redacted validated
-object may enter a handoff.
+present. Apply the shared credential detector to every reviewer-controlled string
+before constructing a handoff. Redact `result_body` and every fact statement. A
+structural field cannot be rewritten safely: reject the chunk if credential
+detection would alter `fact_id`, `kind`, or a location path.
+
+For each location, require an exact match to a path identity already owned by the
+orchestrator: an accepted `CHANGED_FILES` path or a completely traced dependency
+path in the immutable snapshot. Replace the reviewer-supplied path with that exact
+orchestrator-owned canonical string; a path not in that set is invalid. Then
+validate and recount the redacted result body and validate the fact schema. If the
+boundary is unavailable, redaction expands the object over budget, or validation
+fails, the chunk is unavailable. Only the redacted validated object may enter a
+handoff.
 
 The orchestrator, not the reviewer, attaches immutable coverage and dependency
 metadata to form this exact `ChunkHandoff` shape:
@@ -219,26 +228,60 @@ The synthesizer returns exactly one `SynthesisResult` JSON object:
   "synthesis_input_hash": "<sha256>",
   "ordered_chunk_ids": ["<sha256>", "<sha256>"],
   "ordered_handoff_hashes": ["<sha256>", "<sha256>"],
+  "synthesized_additions": [
+    {
+      "result_lines": [
+        "MEDIUM | functionality | src/example.py:42 | unchecked mode reaches build_plan | validate mode before dispatch"
+      ],
+      "supporting_facts": [
+        {"chunk_id": "<sha256>", "fact_id": "local-1"},
+        {"chunk_id": "<sha256>", "fact_id": "local-2"}
+      ]
+    }
+  ],
   "result_body": "findings: none\nsummary: 0 high / 0 medium / 0 low\n"
 }
 ```
 
 Require exactly these fields and exact equality with the input identities and
 order. Capture at most `SYNTHESIS_RESULT_MAX_UTF8_BYTES` in bounded private memory,
-redact `result_body`, then validate and recount it under the logical agent's schema
-and enabled language categories.
+apply credential detection to every synthesizer-controlled string, and redact
+`result_body`. Reject the result if credential detection would alter a
+`synthesized_additions` result line or fact identity; those structural copies must
+already equal the redacted result body and canonical input identities. Then
+validate and recount `result_body` under the logical agent's schema and enabled
+language categories.
 
 The synthesized result must preserve every validated chunk finding:
 
 - for H/M/L, every deduplicated chunk finding line must remain byte-identical;
-- for a checklist, `fail` still wins, otherwise `pass` wins over `N/A`, and every
-  chunk failure remains a failure with its action.
+- for a checklist, `fail` still wins, otherwise `pass` wins over `N/A`; when the
+  same item fails in multiple chunks, retain the first failure action in chunk
+  order as the schema's single numbered action and preserve each later distinct
+  `path:line action` byte-identically in that item's one-line evidence.
 
-Synthesis may add a cross-chunk finding or upgrade a checklist item only when its
-evidence cites repository-relative locations present in the input relationship
-facts. The result may consolidate explanatory text but cannot lower severity,
-remove a failure, change a finding's owner, or invent an unrepresented location.
-Apply the retained effective blocking policy only after this validation.
+`synthesized_additions` is an array of exact objects containing only
+`result_lines` and `supporting_facts`. It is empty when synthesis adds or upgrades
+nothing. Each `result_lines` array contains the exact new H/M/L finding line, or
+the exact upgraded checklist item line plus its numbered failure action when that
+action is new. Each `supporting_facts` array contains at least two unique
+`{"chunk_id", "fact_id"}` pairs from at least two different handoffs. Every pair
+must resolve exactly to a relationship fact in the canonical input.
+
+Deterministically build the schema-specific merged baseline first. Every
+non-summary result line that is not required by that baseline must occur in exactly
+one `synthesized_additions` entry, and every declared addition line must occur
+exactly once in `result_body`. For H/M/L, the finding's repository-relative
+`path:line` must equal a location in one of its supporting facts. For a checklist
+upgrade, the failure action's leading `path:line` must equal a supporting-fact
+location. Reject additions whose support comes from only one chunk, omit a
+referenced fact, or contain an output line not represented by the declared
+provenance.
+
+The result may consolidate explanatory checklist evidence only under the explicit
+multi-failure rule above. It cannot lower severity, remove a failure, change a
+finding's owner, or invent an unrepresented location. Apply the retained effective
+blocking policy only after this validation.
 
 A clean, valid synthesis result establishes complete semantic coverage and may
 contribute to `ready`. A valid synthesized blocker contributes to `blocked`.
@@ -282,6 +325,16 @@ schemas and validation rules in this file. `chunks` preserves input order.
 The existing top-level dependency list is the sorted union of every handoff's
 complete dependencies. A protocol, prompt, schema, input, chunk order, handoff,
 or dependency change therefore invalidates reuse.
+
+On a later probe, recompute every deterministic pre-synthesis identity: reviewed
+state, chunk plan, scoped prompts, protocol, synthesis prompt and schema, effective
+description, configuration, policy, and current dependency hashes. Only after
+those identities exactly match may the orchestrator copy the prior validated
+`input_hash` and ordered `handoff_hash` values from the probed manifest as stored
+evidence attestations and construct the complete candidate key. Handoffs are not
+rerun merely to look up their already validated synthesized result. A malformed
+attestation, deterministic identity mismatch, dependency mismatch, or lookup-key
+mismatch is a cache miss and runs the complete logical reviewer fresh.
 
 When the final guard is required, rebuild and rerun every required chunk and the
 synthesis stage with reuse disabled. Revalidate exact coverage and dependencies
