@@ -9,7 +9,8 @@ All notable changes to the Deep Review plugin are documented in this file. Relea
 ### Added
 
 - Verified POSIX and PowerShell release installers with deterministic client and
-  scope mapping, checksum enforcement, and transactional updates.
+  scope mapping, checksum enforcement, linked-ancestor rejection, and transactional
+  updates.
 - Durable, version-addressable release packages, checksums, and installer assets
   published from protected tags to GitLab Releases.
 - Direct release download, checksum, installation, update, and offline instructions,

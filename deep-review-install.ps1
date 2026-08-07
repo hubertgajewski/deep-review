@@ -53,6 +53,49 @@ function Receive-BoundedAsset {
     }
 }
 
+function Assert-SafeDestinationParent {
+    param(
+        [Parameter(Mandatory = $true)] [string] $SelectedRoot,
+        [Parameter(Mandatory = $true)] [string] $RelativeParent
+    )
+
+    $RootPath = [System.IO.Path]::GetFullPath($SelectedRoot)
+    $ParentPath = [System.IO.Path]::GetFullPath((Join-Path $RootPath $RelativeParent))
+    $Separator = [System.IO.Path]::DirectorySeparatorChar
+    $RootPrefix = $RootPath.TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    ) + $Separator
+    $Comparison = if ($IsWindows) {
+        [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        [System.StringComparison]::Ordinal
+    }
+    if (-not $ParentPath.StartsWith($RootPrefix, $Comparison)) {
+        throw "Installer destination escapes the selected installation root"
+    }
+
+    $Current = $RootPath
+    foreach ($Component in $RelativeParent.Split(
+        [char[]] @([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar),
+        [System.StringSplitOptions]::RemoveEmptyEntries
+    )) {
+        if ($Component -eq "." -or $Component -eq "..") {
+            throw "Installer client destination is not a safe relative path"
+        }
+        $Current = Join-Path $Current $Component
+        $Item = Get-Item -LiteralPath $Current -Force -ErrorAction SilentlyContinue
+        if ($null -ne $Item -and
+            0 -ne ($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            throw "$Current is a symbolic-link or reparse-point ancestor; replace it manually before installing"
+        }
+        if ($null -ne $Item -and -not $Item.PSIsContainer) {
+            throw "$Current is not a directory; replace it manually before installing"
+        }
+    }
+    return $ParentPath
+}
+
 if ($Version -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
     throw "-Version must be a semantic version such as v1.1.0"
 }
@@ -86,7 +129,9 @@ if ($Scope -eq "User") {
 } else {
     $Root = (Get-Location).Path
 }
-$Destination = Join-Path (Join-Path $Root $SkillRoot) "deep-review"
+$Root = [System.IO.Path]::GetFullPath($Root)
+$Parent = Assert-SafeDestinationParent -SelectedRoot $Root -RelativeParent $SkillRoot
+$Destination = Join-Path $Parent "deep-review"
 $Existing = Get-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
 if ($null -ne $Existing -and -not $Update) {
     throw "$Destination already exists; inspect the new release, then rerun with -Update to replace it"
@@ -196,8 +241,15 @@ try {
         throw "Release package version does not match requested version $Version"
     }
 
-    $Parent = Split-Path -Parent $Destination
+    $CheckedParent = Assert-SafeDestinationParent -SelectedRoot $Root -RelativeParent $SkillRoot
+    if ($CheckedParent -cne $Parent) {
+        throw "Installer destination changed while the package was being verified"
+    }
     New-Item -ItemType Directory -Force -Path $Parent | Out-Null
+    $CheckedParent = Assert-SafeDestinationParent -SelectedRoot $Root -RelativeParent $SkillRoot
+    if ($CheckedParent -cne $Parent) {
+        throw "Installer destination changed while the package was being verified"
+    }
     $Stage = Join-Path $Parent (".deep-review.stage." + [guid]::NewGuid())
     $Lock = Join-Path $Parent ".deep-review.install.lock"
     try {
@@ -216,6 +268,10 @@ try {
     New-Item -ItemType File -Path $MarkerPath | Out-Null
     $StageLeaf = Split-Path -Leaf $Stage
 
+    $CheckedParent = Assert-SafeDestinationParent -SelectedRoot $Root -RelativeParent $SkillRoot
+    if ($CheckedParent -cne $Parent) {
+        throw "Installer destination changed while the package was being verified"
+    }
     $CurrentDestination = Get-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
     if ($null -ne $CurrentDestination -and -not $Update) {
         throw "$Destination appeared while the package was being verified; no files were installed"
@@ -228,6 +284,10 @@ try {
         $Backup = Join-Path $Parent (".deep-review.backup." + [guid]::NewGuid())
         New-Item -ItemType Directory -Path $Backup | Out-Null
         Move-Item -LiteralPath $Destination -Destination (Join-Path $Backup "deep-review")
+    }
+    $CheckedParent = Assert-SafeDestinationParent -SelectedRoot $Root -RelativeParent $SkillRoot
+    if ($CheckedParent -cne $Parent) {
+        throw "Installer destination changed during activation"
     }
     Move-Item -LiteralPath $Stage -Destination $Destination
     $ActivatedMarker = Join-Path $Destination $MarkerName

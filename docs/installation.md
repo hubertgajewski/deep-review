@@ -51,7 +51,9 @@ if ($actual -cne $expected) { throw "Installer checksum verification failed" }
 .\deep-review-install.ps1 -Client codex -Scope User -Version v1.1.0
 ```
 
-The installer reports the installed version, destination, checksum, and first review command.
+The installer reports the installed version, destination, checksum, and first review
+command. It stops without changing files if the destination or one of its
+client-directory parents is a symbolic link or Windows reparse point.
 
 ### Install for another client or project
 

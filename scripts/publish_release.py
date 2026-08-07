@@ -343,8 +343,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--project-id", required=True)
     parser.add_argument("--project-url", required=True)
     parser.add_argument("--tag", required=True)
-    parser.add_argument("--asset-directory")
-    parser.add_argument("files", nargs="*")
+    parser.add_argument("--asset-directory", required=True)
     return parser.parse_args(argv)
 
 
@@ -352,20 +351,12 @@ def main(argv: list[str]) -> int:
     args = parse_args(argv)
     if not TAG_PATTERN.fullmatch(args.tag):
         raise PublishError("tag must be an exact semantic version such as v1.1.0")
-    if args.asset_directory and args.files:
-        raise PublishError("use either --asset-directory or explicit asset files, not both")
-    if args.asset_directory:
-        asset_directory = Path(args.asset_directory)
-        files = [asset_directory / name for name in release_asset_names(args.tag)]
-    else:
-        files = [Path(value) for value in args.files]
-    if not files:
-        raise PublishError("release assets are required")
+    required_names = release_asset_names(args.tag)
+    asset_directory = Path(args.asset_directory)
+    files = [asset_directory / name for name in required_names]
     missing = [str(path) for path in files if not path.is_file()]
     if missing:
         raise PublishError(f"release asset does not exist: {', '.join(missing)}")
-    if len({path.name for path in files}) != len(files):
-        raise PublishError("release asset basenames must be unique")
 
     job_token = os.environ.get("CI_JOB_TOKEN")
     if not job_token:

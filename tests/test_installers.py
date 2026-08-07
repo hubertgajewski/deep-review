@@ -134,11 +134,23 @@ class InstallerTests(unittest.TestCase):
             check=False,
         )
 
+    def _run_powershell_wrapper(
+        self, name: str, body: str, *arguments: str
+    ) -> subprocess.CompletedProcess[str]:
+        wrapper = self.root / name
+        wrapper.write_text(body, encoding="utf-8")
+        environment = self._environment(DEEP_REVIEW_INSTALLER_PATH=str(POWERSHELL_INSTALLER))
+        return self._run_powershell(
+            *arguments,
+            installer=wrapper,
+            environment=environment,
+        )
+
     def _run_powershell_with_failed_activation(
         self, *arguments: str
     ) -> subprocess.CompletedProcess[str]:
-        wrapper = self.root / "fail activation.ps1"
-        wrapper.write_text(
+        return self._run_powershell_wrapper(
+            "fail activation.ps1",
             """function Move-Item {
     [CmdletBinding()]
     param([string] $LiteralPath, [string] $Destination)
@@ -147,23 +159,14 @@ class InstallerTests(unittest.TestCase):
 }
 & $env:DEEP_REVIEW_INSTALLER_PATH @args
 """,
-            encoding="utf-8",
-        )
-        environment = self._environment(DEEP_REVIEW_INSTALLER_PATH=str(POWERSHELL_INSTALLER))
-        return subprocess.run(
-            ["pwsh", "-NoProfile", "-File", str(wrapper), *arguments],
-            cwd=self.project,
-            env=environment,
-            text=True,
-            capture_output=True,
-            check=False,
+            *arguments,
         )
 
     def _run_powershell_with_failed_backup_cleanup(
         self, *arguments: str
     ) -> subprocess.CompletedProcess[str]:
-        wrapper = self.root / "fail backup cleanup.ps1"
-        wrapper.write_text(
+        return self._run_powershell_wrapper(
+            "fail backup cleanup.ps1",
             """function Remove-Item {
     [CmdletBinding()]
     param(
@@ -176,16 +179,7 @@ class InstallerTests(unittest.TestCase):
 }
 & $env:DEEP_REVIEW_INSTALLER_PATH @args
 """,
-            encoding="utf-8",
-        )
-        environment = self._environment(DEEP_REVIEW_INSTALLER_PATH=str(POWERSHELL_INSTALLER))
-        return subprocess.run(
-            ["pwsh", "-NoProfile", "-File", str(wrapper), *arguments],
-            cwd=self.project,
-            env=environment,
-            text=True,
-            capture_output=True,
-            check=False,
+            *arguments,
         )
 
     def _installer_arguments(
@@ -336,6 +330,20 @@ exec /bin/mv "$@"
         self.assertIn("no deterministic local destination", result.stderr)
         self.assertFalse((self.project / ".agents").exists())
 
+    def _exercise_linked_destination_ancestor(self, platform: str) -> None:
+        external_root = self.root / "external agent root"
+        destination = external_root / "skills" / "deep-review"
+        destination.mkdir(parents=True)
+        marker = destination / "trusted.txt"
+        marker.write_text("preserve", encoding="utf-8")
+        (self.project / ".agents").symlink_to(external_root, target_is_directory=True)
+
+        result = self._run_installer(platform, update=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ancestor", result.stderr.lower())
+        self.assertEqual(marker.read_text(encoding="utf-8"), "preserve")
+
     def _exercise_adversarial_archive(self, platform: str, *, excessive_entries: bool) -> None:
         self._write_adversarial_archive(platform, excessive_entries=excessive_entries)
         result = self._run_installer(platform)
@@ -433,6 +441,10 @@ exec /bin/mv "$@"
         self.assertIn("symbolic link", result.stderr)
         self.assertTrue(destination.is_symlink())
         self.assertEqual(marker.read_text(encoding="utf-8"), "keep")
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symbolic links are unavailable")
+    def test_posix_update_refuses_symbolic_link_ancestor(self) -> None:
+        self._exercise_linked_destination_ancestor("posix")
 
     def test_posix_checksum_failure_leaves_destination_and_temporary_area_unchanged(self) -> None:
         destination = self.project / ".agents" / "skills" / "deep-review"
@@ -726,6 +738,13 @@ cp \"$FAKE_ASSETS/${url##*/}\" \"$output\"
     def test_powershell_does_not_remove_another_installers_lock(self) -> None:
         self._exercise_foreign_lock("powershell")
 
+    @unittest.skipUnless(
+        shutil.which("pwsh") and hasattr(os, "symlink"),
+        "PowerShell or symbolic links are unavailable",
+    )
+    def test_powershell_update_refuses_symbolic_link_ancestor(self) -> None:
+        self._exercise_linked_destination_ancestor("powershell")
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_powershell_stops_for_nondeterministic_client_without_mutation(self) -> None:
         self._exercise_unsupported_client("powershell")
@@ -796,6 +815,18 @@ class ReleasePublisherTests(unittest.TestCase):
         )
         self.assertEqual(PUBLISH_RELEASE.release_asset_names(VERSION), expected)
         self.assertEqual(tuple(path.name for path, _ in self.release_assets), expected)
+
+    def test_publisher_requires_the_contract_owned_asset_directory(self) -> None:
+        arguments = [
+            "--api-url", "https://gitlab.com/api/v4",
+            "--project-id", "group/project",
+            "--project-url", "https://gitlab.com/group/project",
+            "--tag", VERSION,
+        ]
+
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit) as raised:
+            PUBLISH_RELEASE.main(arguments)
+        self.assertEqual(raised.exception.code, 2)
 
     def test_publish_file_uploads_missing_asset_without_exposing_token_in_url(self) -> None:
         not_found = HTTPError("https://example.invalid", 404, "missing", {}, io.BytesIO())

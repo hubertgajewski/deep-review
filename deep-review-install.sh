@@ -20,6 +20,35 @@ fail() {
     exit 1
 }
 
+assert_safe_parent() {
+    selected_root=$1
+    relative_parent=$2
+    case /$relative_parent/ in
+        */../*|*/./*|*//*) fail "installer client destination is not a safe relative path" ;;
+    esac
+
+    current=$selected_root
+    previous_ifs=$IFS
+    IFS=/
+    set -- $relative_parent
+    IFS=$previous_ifs
+    for component in "$@"; do
+        [ -n "$component" ] || continue
+        current=$current/$component
+        if [ -L "$current" ]; then
+            fail "$current is a symbolic-link ancestor; replace it manually before installing"
+        fi
+        if [ -e "$current" ] && [ ! -d "$current" ]; then
+            fail "$current is not a directory; replace it manually before installing"
+        fi
+    done
+    case $current/ in
+        "$selected_root"/*) ;;
+        *) fail "installer destination escapes the selected installation root" ;;
+    esac
+    safe_parent=$current
+}
+
 client=
 scope=
 version=
@@ -77,13 +106,19 @@ if [ -z "$skill_root" ]; then
 fi
 
 case $scope in
-    project) destination="$PWD/$skill_root/deep-review" ;;
+    project)
+        root=$(pwd -P) || fail "could not resolve the project installation root"
+        ;;
     user)
         [ -n "${HOME:-}" ] || fail "HOME is not set; cannot resolve the user installation directory"
-        destination="$HOME/$skill_root/deep-review"
+        root=$(CDPATH= cd "$HOME" 2>/dev/null && pwd -P) ||
+            fail "could not resolve the user installation root: $HOME"
         ;;
     *) fail "--scope must be 'user' or 'project'" ;;
 esac
+assert_safe_parent "$root" "$skill_root"
+parent=$safe_parent
+destination=$parent/deep-review
 
 if { [ -e "$destination" ] || [ -L "$destination" ]; } && [ "$update" != true ]; then
     fail "$destination already exists; inspect the new release, then rerun with --update to replace it"
@@ -204,8 +239,11 @@ fi
 manifest_version=$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p' "$package/.claude-plugin/plugin.json")
 [ "$manifest_version" = "${version#v}" ] || fail "release package version does not match requested version $version"
 
-parent=${destination%/deep-review}
+assert_safe_parent "$root" "$skill_root"
+[ "$safe_parent" = "$parent" ] || fail "installer destination changed while the package was being verified"
 mkdir -p "$parent"
+assert_safe_parent "$root" "$skill_root"
+[ "$safe_parent" = "$parent" ] || fail "installer destination changed while the package was being verified"
 lock="$parent/.deep-review.install.lock"
 if ! mkdir "$lock" 2>/dev/null; then
     fail "another installation is active or left $lock; verify no installer is running before removing that lock"
@@ -218,6 +256,8 @@ cp -R "$package"/. "$stage" || fail "could not stage the release package"
 : > "$stage/$marker"
 stage_leaf=${stage##*/}
 
+assert_safe_parent "$root" "$skill_root"
+[ "$safe_parent" = "$parent" ] || fail "installer destination changed while the package was being verified"
 if { [ -e "$destination" ] || [ -L "$destination" ]; } && [ "$update" != true ]; then
     fail "$destination appeared while the package was being verified; no files were installed"
 fi
@@ -228,6 +268,8 @@ if [ -e "$destination" ] || [ -L "$destination" ]; then
     backup=$(mktemp -d "$parent/.deep-review.backup.XXXXXX") || fail "could not create a rollback directory"
     mv "$destination" "$backup/deep-review" || fail "could not move the existing installation for replacement"
 fi
+assert_safe_parent "$root" "$skill_root"
+[ "$safe_parent" = "$parent" ] || fail "installer destination changed during activation"
 mv "$stage" "$destination" || fail "could not activate the staged installation"
 [ -f "$destination/$marker" ] || fail "destination changed during activation; the staged package was not activated"
 activation_owned=true
