@@ -92,6 +92,8 @@ The general roster covers correctness, security, architecture, simplification, d
 
 Language reviewers own only their documented language-semantic rules. General concerns such as dead imports, unused symbols, runtime correctness, security, architecture, and simplification remain with the corresponding general reviewers. The complete rule catalog is in [Configuration](docs/configuration.md#built-in-language-rules).
 
+Conventional generated C# output under `obj` or ending in `.g.cs`, `.g.i.cs`, `.designer.cs`, or `.generated.cs` does not dispatch the C# reviewer; general reviewers still receive those paths when their triggers match.
+
 ## Configuration
 
 All built-in language reviewers and rules are enabled by default. A trusted `.deep-review/config.toml` can disable a complete language reviewer or selected rules:

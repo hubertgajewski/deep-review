@@ -138,6 +138,8 @@ disabled = [
 
 Consumers can disable these rules but cannot redefine their instructions, severity guidance, output schema, or safety constraints.
 
+The C# reviewer does not dispatch for generated-only changes under an exact lowercase `obj` path component or with final names ending, case-insensitively, in `.g.cs`, `.g.i.cs`, `.designer.cs`, or `.generated.cs`. These exclusions are package-owned and remain active if a repository customizes `[large_diff].generated`; generated paths remain available to applicable general reviewers.
+
 ## Customize triggers and diff handling
 
 The `[triggers]` table controls when the documentation, CI, and project-checklist reviewers run. `[large_diff]` classifies generated, low-risk, and high-risk paths. Use repository-relative `/` separators on every operating system.

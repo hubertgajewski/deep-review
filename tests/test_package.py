@@ -1367,6 +1367,26 @@ class PackageTests(unittest.TestCase):
             self.assertIn(excluded, orchestration)
         self.assertIn("evaluate only C# constructs", agent)
 
+    def test_csharp_generated_output_is_excluded_before_dispatch(self) -> None:
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+
+        for suffix in (".g.cs", ".g.i.cs", ".designer.cs", ".generated.cs"):
+            self.assertIn(suffix, config)
+            self.assertIn(suffix, orchestration)
+            self.assertIn(suffix, user_config)
+        for text in (
+            "Before evaluating the C# language trigger",
+            "package-owned",
+            "generated-only C# change",
+            "SKIPPED: language trigger did not match",
+        ):
+            self.assertIn(text, orchestration)
+        self.assertIn("exact lowercase `obj` component", config)
+        self.assertIn("cannot be disabled by consumer configuration", orchestration)
+        self.assertIn("retain every accepted path in `CHANGED_FILES`", orchestration)
+
     def test_groovy_kotlin_dsl_and_jenkins_ownership_is_explicit(self) -> None:
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
         contract = (SKILL / "references" / "agent-contract.md").read_text(encoding="utf-8")

@@ -7,8 +7,9 @@ All notable changes to the Deep Review plugin are documented in this file. Relea
 ### Added
 
 - A built-in C# language reviewer for compiled C#, C# scripts, and C# regions in
-  Razor files, with eight configurable semantic rules covering nullability,
-  asynchronous tasks, cancellation, resource lifetimes, and equality contracts.
+  Razor files, with package-owned generated-output exclusions and eight configurable
+  semantic rules covering nullability, asynchronous tasks, cancellation, resource
+  lifetimes, and equality contracts.
 - Resource-bounded cross-chunk synthesis with credential-redacted handoffs, exact
   coverage validation, fail-closed aggregation, synthesis-aware cache identities,
   and fresh final-guard reruns.
