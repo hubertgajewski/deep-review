@@ -164,6 +164,7 @@ class InstallerTests(unittest.TestCase):
         output = bytearray()
         interaction_index = 0
         search_offset = 0
+        cursor_query_offset = 0
         deadline = time.monotonic() + 30
         try:
             while process.poll() is None:
@@ -182,9 +183,15 @@ class InstallerTests(unittest.TestCase):
                         output.extend(chunk)
                     except (BlockingIOError, OSError):
                         break
+                rendered = output.decode("utf-8", errors="replace")
+                while True:
+                    query_offset = rendered.find("\x1b[6n", cursor_query_offset)
+                    if query_offset < 0:
+                        break
+                    os.write(master, b"\x1b[1;1R")
+                    cursor_query_offset = query_offset + len("\x1b[6n")
                 while interaction_index < len(interactions):
                     prompt, response = interactions[interaction_index]
-                    rendered = output.decode("utf-8", errors="replace")
                     prompt_offset = rendered.find(prompt, search_offset)
                     if prompt_offset < 0:
                         break
