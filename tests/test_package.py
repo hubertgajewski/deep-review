@@ -161,9 +161,10 @@ class PackageTests(unittest.TestCase):
             self.assertTrue(path.is_file(), path)
         self.assertEqual(manifest["version"], "1.1.0")
         self.assertIn("## [1.1.0] - 2026-08-07", (SKILL / "CHANGELOG.md").read_text(encoding="utf-8"))
-        self.assertIn("**[Deep Review releases page]", installation)
+        self.assertIn("**Deploy > Releases**", installation)
         self.assertIn("there is no verified installer to download yet", installation)
-        self.assertIn("does not link to assets for an unpublished version", installation)
+        self.assertIn("contains no release or asset URL", installation)
+        self.assertNotIn("/-/releases", installation)
         self.assertLess(
             installation.index("## Install a verified release"),
             installation.index("## Advanced: install a pinned commit"),

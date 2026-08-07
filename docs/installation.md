@@ -13,13 +13,13 @@ Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep
 
 ## Install a verified release
 
-1. Open the **[Deep Review releases page](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases)**.
+1. In the Deep Review project on GitLab, choose **Deploy > Releases** in the sidebar.
 2. Open the version you want to install.
-3. Copy and run the **Linux and macOS** or **Windows PowerShell** block shown on that release page.
+3. Copy and run the **Linux and macOS** or **Windows PowerShell** block shown there.
 
 That block downloads the correct installer and checksum, verifies them, and installs the same release version. It defaults to Codex at user scope and shows the small change needed for another [client or scope](#installer-destinations). Do not pipe a downloaded installer directly into a shell.
 
-If the page says there are no releases, there is no verified installer to download yet. Use the [pinned-commit instructions](#advanced-install-a-pinned-commit) until a release is published. This guide deliberately does not link to assets for an unpublished version.
+If GitLab says there are no releases, there is no verified installer to download yet. Use the [pinned-commit instructions](#advanced-install-a-pinned-commit) until a release is published. This guide deliberately contains no release or asset URL before that destination exists.
 
 The installer downloads the package for exactly that version into a private temporary directory, verifies its SHA-256 checksum, validates the complete package layout, and only then activates it. It prints the installed version, destination, verification result, and first review command. A failed download, checksum, extraction, or validation leaves the destination unchanged and removes temporary files.
 
