@@ -2,6 +2,10 @@
 
 Deep Review is a configurable, review-only Agent Skill that coordinates specialized reviewers over repository changes and returns one result: `ready`, `blocked`, or `incomplete`.
 
+## Install
+
+Download the verified installer and checksum for your operating system from the [`v1.1.0` GitLab Release](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0), then follow the short [installation and update instructions](docs/installation.md#install-from-a-release). The installer supports user and project scope and selects the correct directory from your client ID.
+
 ## Quick start
 
 1. [Install Deep Review](docs/installation.md) for your AI client.

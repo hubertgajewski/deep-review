@@ -57,26 +57,21 @@ if ($Version -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') 
     throw "-Version must be a semantic version such as v1.1.0"
 }
 
-$SharedClients = @(
-    "amp", "codex", "cursor", "devin", "gemini", "github-copilot",
-    "antigravity", "goose", "opencode", "openhands", "warp", "windsurf"
-)
-$NativeRoots = @{
-    "claude-code" = ".claude/skills"
-    "cline" = ".cline/skills"
-    "grok" = ".grok/skills"
-    "junie" = ".junie/skills"
-    "kiro" = ".kiro/skills"
-    "mistral" = ".vibe/skills"
-    "qwen" = ".qwen/skills"
+# Generated from release-contract.json; tests require an exact match.
+$ClientRootEntries = "amp=.agents/skills codex=.agents/skills cursor=.agents/skills devin=.agents/skills gemini=.agents/skills github-copilot=.agents/skills antigravity=.agents/skills goose=.agents/skills opencode=.agents/skills openhands=.agents/skills warp=.agents/skills windsurf=.agents/skills claude-code=.claude/skills cline=.cline/skills grok=.grok/skills junie=.junie/skills kiro=.kiro/skills mistral=.vibe/skills qwen=.qwen/skills"
+$UnsupportedClientEntries = "t3 claude-chat claude-cowork"
+$ClientRoots = @{}
+foreach ($Entry in $ClientRootEntries.Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)) {
+    $Parts = $Entry.Split("=", 2)
+    $ClientRoots[$Parts[0]] = $Parts[1]
 }
-$UnsupportedClients = @("t3", "claude-chat", "claude-cowork")
+$UnsupportedClients = $UnsupportedClientEntries.Split(
+    " ", [System.StringSplitOptions]::RemoveEmptyEntries
+)
 $Client = $Client.ToLowerInvariant()
 
-if ($SharedClients -contains $Client) {
-    $SkillRoot = ".agents/skills"
-} elseif ($NativeRoots.ContainsKey($Client)) {
-    $SkillRoot = $NativeRoots[$Client]
+if ($ClientRoots.ContainsKey($Client)) {
+    $SkillRoot = $ClientRoots[$Client]
 } elseif ($UnsupportedClients -contains $Client) {
     throw "Client '$Client' has no deterministic local destination. See https://gitlab.com/hubertgajewski-ai/deep-review/-/blob/main/docs/installation.md#other-installation-environments"
 } else {
@@ -245,12 +240,16 @@ try {
         throw "Activated installation failed final validation"
     }
     Remove-Item -Force -LiteralPath $ActivatedMarker
-    if ($Backup) {
-        Remove-Item -Recurse -Force -LiteralPath $Backup
-        $Backup = $null
-    }
     $ActivationOwned = $false
     $Activated = $true
+    if ($Backup) {
+        try {
+            Remove-Item -Recurse -Force -LiteralPath $Backup
+            $Backup = $null
+        } catch {
+            Write-Warning "Installed successfully, but the previous installation could not be removed from $(Join-Path $Backup 'deep-review')"
+        }
+    }
 
     if ($Client -eq "codex") {
         $FirstCommand = '$deep-review --base main'

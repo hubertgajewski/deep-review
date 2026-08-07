@@ -57,22 +57,24 @@ done
 printf '%s\n' "$version" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' ||
     fail "--version must be a semantic version such as v1.1.0"
 
-case $client in
-    amp|codex|cursor|devin|gemini|github-copilot|antigravity|goose|opencode|openhands|warp|windsurf)
-        skill_root=.agents/skills
-        ;;
-    claude-code) skill_root=.claude/skills ;;
-    cline) skill_root=.cline/skills ;;
-    grok) skill_root=.grok/skills ;;
-    junie) skill_root=.junie/skills ;;
-    kiro) skill_root=.kiro/skills ;;
-    mistral) skill_root=.vibe/skills ;;
-    qwen) skill_root=.qwen/skills ;;
-    t3|claude-chat|claude-cowork)
-        fail "client '$client' has no deterministic local destination; see https://gitlab.com/hubertgajewski-ai/deep-review/-/blob/main/docs/installation.md#other-installation-environments"
-        ;;
-    *) fail "unsupported client '$client'; run $PROGRAM --help and see the installation guide for supported client IDs" ;;
-esac
+# Generated from release-contract.json; tests require an exact match.
+CLIENT_ROOT_ENTRIES='amp=.agents/skills codex=.agents/skills cursor=.agents/skills devin=.agents/skills gemini=.agents/skills github-copilot=.agents/skills antigravity=.agents/skills goose=.agents/skills opencode=.agents/skills openhands=.agents/skills warp=.agents/skills windsurf=.agents/skills claude-code=.claude/skills cline=.cline/skills grok=.grok/skills junie=.junie/skills kiro=.kiro/skills mistral=.vibe/skills qwen=.qwen/skills'
+UNSUPPORTED_CLIENTS='t3 claude-chat claude-cowork'
+
+skill_root=
+for client_entry in $CLIENT_ROOT_ENTRIES; do
+    case $client_entry in
+        "$client="*) skill_root=${client_entry#*=}; break ;;
+    esac
+done
+if [ -z "$skill_root" ]; then
+    case " $UNSUPPORTED_CLIENTS " in
+        *" $client "*)
+            fail "client '$client' has no deterministic local destination; see https://gitlab.com/hubertgajewski-ai/deep-review/-/blob/main/docs/installation.md#other-installation-environments"
+            ;;
+        *) fail "unsupported client '$client'; run $PROGRAM --help and see the installation guide for supported client IDs" ;;
+    esac
+fi
 
 case $scope in
     project) destination="$PWD/$skill_root/deep-review" ;;
@@ -232,9 +234,14 @@ activation_owned=true
 stage=
 [ -f "$destination/SKILL.md" ] || fail "activated installation failed final validation"
 rm -f -- "$destination/$marker" || fail "could not finalize the activated installation"
-[ -z "$backup" ] || rm -rf -- "$backup"
-backup=
 activation_owned=false
+if [ -n "$backup" ]; then
+    if rm -rf -- "$backup"; then
+        backup=
+    else
+        printf '%s: installed successfully, but the previous installation could not be removed from %s/deep-review\n' "$PROGRAM" "$backup" >&2
+    fi
+fi
 
 case $client in
     codex) first_command='$deep-review --base main' ;;

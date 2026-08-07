@@ -154,6 +154,7 @@ class PackageTests(unittest.TestCase):
         for path in (
             ROOT / "deep-review-install.sh",
             ROOT / "deep-review-install.ps1",
+            ROOT / "release-contract.json",
             ROOT / "scripts" / "publish_release.py",
             ROOT / "tests" / "test_installers.py",
         ):
@@ -167,6 +168,7 @@ class PackageTests(unittest.TestCase):
             "deep-review-install.sh.sha256",
             "deep-review-install.ps1.sha256",
             "python scripts/publish_release.py",
+            "--asset-directory release-assets",
             'CI_COMMIT_REF_PROTECTED == "true"',
         ):
             self.assertIn(token, pipeline)
@@ -1316,7 +1318,15 @@ class PackageTests(unittest.TestCase):
         for status in ("`ready`", "`blocked`", "`incomplete`"):
             self.assertIn(status, readme)
         self.assertIn("## Requirements", installation)
-        self.assertLess(installation.index("## Requirements"), installation.index("## Install a pinned copy"))
+        self.assertLess(
+            installation.index("## Requirements"),
+            installation.index("## Install a pinned copy from source"),
+        )
+        self.assertIn("## Install from a release", installation)
+        self.assertIn("deep-review-install.sh.sha256", installation)
+        self.assertIn("--version v1.1.0 --update", installation)
+        self.assertIn("-Version v1.1.0 -Update", installation)
+        self.assertIn("## Offline installation", installation)
         self.assertIn("../README.md#quick-start", installation)
         self.assertIn("Disable automatic pipelines", maintainers)
         self.assertIn("user-facing installation", agents)

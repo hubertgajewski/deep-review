@@ -4,6 +4,7 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -21,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 POSIX_INSTALLER = ROOT / "deep-review-install.sh"
 POWERSHELL_INSTALLER = ROOT / "deep-review-install.ps1"
 VERSION = "v1.1.0"
+RELEASE_CONTRACT = json.loads((ROOT / "release-contract.json").read_text(encoding="utf-8"))
 
 PUBLISH_SPEC = importlib.util.spec_from_file_location(
     "publish_release", ROOT / "scripts" / "publish_release.py"
@@ -118,12 +120,15 @@ class InstallerTests(unittest.TestCase):
         )
 
     def _run_powershell(
-        self, *arguments: str, installer: Path = POWERSHELL_INSTALLER
+        self,
+        *arguments: str,
+        installer: Path = POWERSHELL_INSTALLER,
+        environment: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             ["pwsh", "-NoProfile", "-File", str(installer), *arguments],
             cwd=self.project,
-            env=self._environment(),
+            env=environment or self._environment(),
             text=True,
             capture_output=True,
             check=False,
@@ -139,6 +144,35 @@ class InstallerTests(unittest.TestCase):
     param([string] $LiteralPath, [string] $Destination)
     if ($LiteralPath -like '*.deep-review.stage.*') { throw 'injected activation failure' }
     Microsoft.PowerShell.Management\\Move-Item -LiteralPath $LiteralPath -Destination $Destination
+}
+& $env:DEEP_REVIEW_INSTALLER_PATH @args
+""",
+            encoding="utf-8",
+        )
+        environment = self._environment(DEEP_REVIEW_INSTALLER_PATH=str(POWERSHELL_INSTALLER))
+        return subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(wrapper), *arguments],
+            cwd=self.project,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def _run_powershell_with_failed_backup_cleanup(
+        self, *arguments: str
+    ) -> subprocess.CompletedProcess[str]:
+        wrapper = self.root / "fail backup cleanup.ps1"
+        wrapper.write_text(
+            """function Remove-Item {
+    [CmdletBinding()]
+    param(
+        [switch] $Recurse,
+        [switch] $Force,
+        [string] $LiteralPath
+    )
+    if ($LiteralPath -like '*.deep-review.backup.*') { throw 'injected backup cleanup failure' }
+    Microsoft.PowerShell.Management\\Remove-Item @PSBoundParameters
 }
 & $env:DEEP_REVIEW_INSTALLER_PATH @args
 """,
@@ -179,6 +213,19 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.home / ".cline" / "skills" / "deep-review" / "SKILL.md").is_file())
 
+    def test_installers_match_versioned_client_contract(self) -> None:
+        client_entries = " ".join(
+            f"{client}={root}" for client, root in RELEASE_CONTRACT["client_roots"].items()
+        )
+        unsupported = " ".join(RELEASE_CONTRACT["unsupported_clients"])
+        posix = POSIX_INSTALLER.read_text(encoding="utf-8")
+        powershell = POWERSHELL_INSTALLER.read_text(encoding="utf-8")
+
+        self.assertIn(f"CLIENT_ROOT_ENTRIES='{client_entries}'", posix)
+        self.assertIn(f"UNSUPPORTED_CLIENTS='{unsupported}'", posix)
+        self.assertIn(f'$ClientRootEntries = "{client_entries}"', powershell)
+        self.assertIn(f'$UnsupportedClientEntries = "{unsupported}"', powershell)
+
     def test_posix_refuses_existing_destination_without_update(self) -> None:
         destination = self.project / ".agents" / "skills" / "deep-review"
         destination.mkdir(parents=True)
@@ -208,6 +255,36 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(marker.exists())
         self.assertTrue((destination / "SKILL.md").is_file())
+
+    def test_posix_backup_cleanup_failure_keeps_successful_install(self) -> None:
+        destination = self.project / ".agents" / "skills" / "deep-review"
+        destination.mkdir(parents=True)
+        (destination / "existing.txt").write_text("previous", encoding="utf-8")
+        fake_rm = self.fake_bin / "rm"
+        fake_rm.write_text(
+            """#!/bin/sh
+case "$*" in
+    *'.deep-review.backup.'*) exit 1 ;;
+esac
+exec /bin/rm "$@"
+""",
+            encoding="utf-8",
+        )
+        fake_rm.chmod(0o755)
+        environment = self._environment(PATH=f"{self.fake_bin}{os.pathsep}{os.environ['PATH']}")
+
+        result = self._run_posix(
+            "--client", "codex", "--scope", "project", "--version", VERSION,
+            "--asset-dir", str(self.assets), "--update", environment=environment,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((destination / "SKILL.md").is_file())
+        self.assertFalse((destination / ".deep-review-installing").exists())
+        backups = list(destination.parent.glob(".deep-review.backup.*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / "deep-review" / "existing.txt").read_text(), "previous")
+        self.assertIn("installed successfully", (result.stdout + result.stderr).lower())
 
     def test_posix_failed_activation_restores_existing_destination(self) -> None:
         destination = self.project / ".agents" / "skills" / "deep-review"
@@ -604,6 +681,25 @@ cp \"$FAKE_ASSETS/${url##*/}\" \"$output\"
         self.assertFalse((destination.parent / ".deep-review.install.lock").exists())
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
+    def test_powershell_backup_cleanup_failure_keeps_successful_install(self) -> None:
+        destination = self.project / ".agents" / "skills" / "deep-review"
+        destination.mkdir(parents=True)
+        (destination / "existing.txt").write_text("previous", encoding="utf-8")
+
+        result = self._run_powershell_with_failed_backup_cleanup(
+            "-Client", "codex", "-Scope", "Project", "-Version", VERSION,
+            "-AssetDirectory", str(self.assets), "-Update",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((destination / "SKILL.md").is_file())
+        self.assertFalse((destination / ".deep-review-installing").exists())
+        backups = list(destination.parent.glob(".deep-review.backup.*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / "deep-review" / "existing.txt").read_text(), "previous")
+        self.assertIn("installed successfully", (result.stdout + result.stderr).lower())
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_powershell_failed_activation_restores_existing_destination(self) -> None:
         destination = self.project / ".agents" / "skills" / "deep-review"
         destination.mkdir(parents=True)
@@ -688,23 +784,17 @@ class ReleasePublisherTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="deep review publisher ")
         self.asset = Path(self.temporary.name) / "asset.bin"
         self.asset.write_bytes(b"durable release asset")
-        required_names = (
-            f"deep-review-{VERSION}.tar.gz",
-            f"deep-review-{VERSION}.tar.gz.sha256",
-            f"deep-review-{VERSION}.zip",
-            f"deep-review-{VERSION}.zip.sha256",
-            "deep-review-install.sh",
-            "deep-review-install.sh.sha256",
-            "deep-review-install.ps1",
-            "deep-review-install.ps1.sha256",
-        )
+        required_names = PUBLISH_RELEASE.release_asset_names(VERSION)
         self.release_assets: list[tuple[Path, str]] = []
         for name in required_names:
             path = Path(self.temporary.name) / name
             path.write_bytes(name.encode("ascii"))
-            self.release_assets.append((path, f"https://gitlab.example/package/{name}"))
+            self.release_assets.append((path, f"https://gitlab.com/package/{name}"))
         self.client = PUBLISH_RELEASE.GitLabClient(
-            "https://gitlab.example/api/v4", "group/project", "secret-job-token"
+            "https://gitlab.com/api/v4",
+            "group/project",
+            "https://gitlab.com/group/project",
+            "secret-job-token",
         )
 
     def tearDown(self) -> None:
@@ -724,6 +814,29 @@ class ReleasePublisherTests(unittest.TestCase):
             )
         return {"tag_name": VERSION, "assets": {"links": links}}
 
+    def test_client_rejects_untrusted_initial_urls_before_authentication(self) -> None:
+        invalid = (
+            ("http://gitlab.com/api/v4", "https://gitlab.com/group/project"),
+            ("https://example.com/api/v4", "https://gitlab.com/group/project"),
+            ("https://gitlab.com/api/v4", "https://example.com/group/project"),
+            ("https://user@gitlab.com/api/v4", "https://gitlab.com/group/project"),
+            ("https://gitlab.com/api/v4?target=other", "https://gitlab.com/group/project"),
+        )
+        for api_url, project_url in invalid:
+            with self.subTest(api_url=api_url, project_url=project_url):
+                with self.assertRaises(PUBLISH_RELEASE.PublishError):
+                    PUBLISH_RELEASE.GitLabClient(
+                        api_url, "group/project", project_url, "secret-job-token"
+                    )
+
+    def test_release_asset_roster_comes_from_versioned_contract(self) -> None:
+        expected = tuple(
+            template.replace("{tag}", VERSION)
+            for template in RELEASE_CONTRACT["release_assets"]
+        )
+        self.assertEqual(PUBLISH_RELEASE.release_asset_names(VERSION), expected)
+        self.assertEqual(tuple(path.name for path, _ in self.release_assets), expected)
+
     def test_publish_file_uploads_missing_asset_without_exposing_token_in_url(self) -> None:
         not_found = HTTPError("https://example.invalid", 404, "missing", {}, io.BytesIO())
         with mock.patch.object(
@@ -736,7 +849,7 @@ class ReleasePublisherTests(unittest.TestCase):
 
         self.assertEqual(
             url,
-            "https://gitlab.example/api/v4/projects/group%2Fproject/packages/generic/"
+            "https://gitlab.com/api/v4/projects/group%2Fproject/packages/generic/"
             "deep-review/1.1.0/asset.bin",
         )
         self.assertEqual(opened.call_count, 2)
@@ -769,7 +882,7 @@ class ReleasePublisherTests(unittest.TestCase):
                 self.client._request("GET", "/bounded", max_response_bytes=4)
 
         source_request = PUBLISH_RELEASE.Request(
-            "https://gitlab.example/api/v4/projects/1", headers={"JOB-TOKEN": "secret"}
+            "https://gitlab.com/api/v4/projects/1", headers={"JOB-TOKEN": "secret"}
         )
         redirected = PUBLISH_RELEASE.SafeRedirects().redirect_request(
             source_request,
@@ -800,7 +913,7 @@ class ReleasePublisherTests(unittest.TestCase):
 
         self.client.ensure_release(
             VERSION,
-            "https://gitlab.example/group/project",
+            "https://gitlab.com/group/project",
             self.release_assets,
         )
 
@@ -832,7 +945,7 @@ class ReleasePublisherTests(unittest.TestCase):
 
     def test_release_posix_block_fails_closed_in_private_temporary_directory(self) -> None:
         description = self.client._release_description(
-            VERSION, "https://gitlab.example/group/project"
+            VERSION, "https://gitlab.com/group/project"
         )
         block = description.split("```bash\n", 1)[1].split("\n```", 1)[0]
         with tempfile.TemporaryDirectory(prefix="release block ") as temporary:
@@ -872,7 +985,7 @@ class ReleasePublisherTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_release_powershell_block_fails_closed_in_private_temporary_directory(self) -> None:
         description = self.client._release_description(
-            VERSION, "https://gitlab.example/group/project"
+            VERSION, "https://gitlab.com/group/project"
         )
         block = description.split("```powershell\n", 1)[1].split("\n```", 1)[0]
         with tempfile.TemporaryDirectory(prefix="release block ") as temporary:
@@ -935,7 +1048,7 @@ catch {
 
         self.client.ensure_release(
             VERSION,
-            "https://gitlab.example/group/project",
+            "https://gitlab.com/group/project",
             self.release_assets,
         )
 
@@ -955,7 +1068,7 @@ catch {
                         f"/projects/{self.client.project}/releases/{VERSION}/assets/links"
                     )
                 else:
-                    links[0]["url"] = "https://gitlab.example/wrong"
+                    links[0]["url"] = "https://gitlab.com/wrong"
                     expected_method = "PUT"
                     expected_path = (
                         f"/projects/{self.client.project}/releases/{VERSION}/assets/links/1"
@@ -970,7 +1083,7 @@ catch {
                 with self.assertRaisesRegex(PUBLISH_RELEASE.PublishError, "injected link failure"):
                     self.client.ensure_release(
                         VERSION,
-                        "https://gitlab.example/group/project",
+                        "https://gitlab.com/group/project",
                         self.release_assets,
                     )
 
@@ -984,7 +1097,7 @@ catch {
         with self.assertRaisesRegex(PUBLISH_RELEASE.PublishError, "required assets"):
             self.client.ensure_release(
                 VERSION,
-                "https://gitlab.example/group/project",
+                "https://gitlab.com/group/project",
                 self.release_assets[:-1],
             )
 
@@ -995,7 +1108,7 @@ catch {
         with self.assertRaisesRegex(PUBLISH_RELEASE.PublishError, "invalid existing release"):
             self.client.ensure_release(
                 VERSION,
-                "https://gitlab.example/group/project",
+                "https://gitlab.com/group/project",
                 self.release_assets,
             )
 

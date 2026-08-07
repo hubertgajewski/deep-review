@@ -19,10 +19,47 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 TAG_PATTERN = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 MAX_ASSET_BYTES = 64 * 1024 * 1024
 MAX_API_RESPONSE_BYTES = 1024 * 1024
+RELEASE_CONTRACT = Path(__file__).resolve().parents[1] / "release-contract.json"
+TRUSTED_GITLAB_ORIGIN = ("https", "gitlab.com", 443)
 
 
 class PublishError(RuntimeError):
     """A safe, actionable publication failure."""
+
+
+def _validated_https_url(label: str, value: str) -> tuple[str, str, int]:
+    parsed = urlparse(value)
+    if parsed.scheme.lower() != "https" or not parsed.hostname:
+        raise PublishError(f"{label} must be an absolute HTTPS URL")
+    if parsed.username is not None or parsed.password is not None:
+        raise PublishError(f"{label} must not contain user information")
+    if parsed.query or parsed.fragment:
+        raise PublishError(f"{label} must not contain a query or fragment")
+    try:
+        port = parsed.port or 443
+    except ValueError as error:
+        raise PublishError(f"{label} contains an invalid port") from error
+    return parsed.scheme.lower(), parsed.hostname.lower(), port
+
+
+def release_asset_names(tag: str) -> tuple[str, ...]:
+    try:
+        contract = json.loads(RELEASE_CONTRACT.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise PublishError("release-contract.json is unavailable or malformed") from error
+    if not isinstance(contract, dict) or contract.get("version") != 1:
+        raise PublishError("release-contract.json has an unsupported version")
+    templates = contract.get("release_assets")
+    if not isinstance(templates, list) or not templates or any(
+        not isinstance(template, str) for template in templates
+    ):
+        raise PublishError("release-contract.json has an invalid release_assets list")
+    names = tuple(template.replace("{tag}", tag) for template in templates)
+    if len(set(names)) != len(names) or any(
+        not name or Path(name).name != name for name in names
+    ):
+        raise PublishError("release-contract.json produces unsafe or duplicate asset names")
+    return names
 
 
 class SafeRedirects(HTTPRedirectHandler):
@@ -61,7 +98,17 @@ def open_url(request: Request, *, timeout: int) -> Any:
 
 
 class GitLabClient:
-    def __init__(self, api_url: str, project_id: str, job_token: str) -> None:
+    def __init__(
+        self,
+        api_url: str,
+        project_id: str,
+        project_url: str,
+        job_token: str,
+    ) -> None:
+        api_origin = _validated_https_url("GitLab API URL", api_url)
+        project_origin = _validated_https_url("GitLab project URL", project_url)
+        if api_origin != TRUSTED_GITLAB_ORIGIN or project_origin != TRUSTED_GITLAB_ORIGIN:
+            raise PublishError("GitLab API and project URLs must use https://gitlab.com")
         self.api_url = api_url.rstrip("/")
         self.project = quote(project_id, safe="")
         self.headers = {"JOB-TOKEN": job_token}
@@ -165,16 +212,7 @@ class GitLabClient:
         project_url: str,
         assets: list[tuple[Path, str]],
     ) -> None:
-        required_names = {
-            f"deep-review-{tag}.tar.gz",
-            f"deep-review-{tag}.tar.gz.sha256",
-            f"deep-review-{tag}.zip",
-            f"deep-review-{tag}.zip.sha256",
-            "deep-review-install.sh",
-            "deep-review-install.sh.sha256",
-            "deep-review-install.ps1",
-            "deep-review-install.ps1.sha256",
-        }
+        required_names = set(release_asset_names(tag))
         missing_names = sorted(required_names - {path.name for path, _ in assets})
         if missing_names:
             raise PublishError(
@@ -305,7 +343,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--project-id", required=True)
     parser.add_argument("--project-url", required=True)
     parser.add_argument("--tag", required=True)
-    parser.add_argument("files", nargs="+")
+    parser.add_argument("--asset-directory")
+    parser.add_argument("files", nargs="*")
     return parser.parse_args(argv)
 
 
@@ -313,7 +352,15 @@ def main(argv: list[str]) -> int:
     args = parse_args(argv)
     if not TAG_PATTERN.fullmatch(args.tag):
         raise PublishError("tag must be an exact semantic version such as v1.1.0")
-    files = [Path(value) for value in args.files]
+    if args.asset_directory and args.files:
+        raise PublishError("use either --asset-directory or explicit asset files, not both")
+    if args.asset_directory:
+        asset_directory = Path(args.asset_directory)
+        files = [asset_directory / name for name in release_asset_names(args.tag)]
+    else:
+        files = [Path(value) for value in args.files]
+    if not files:
+        raise PublishError("release assets are required")
     missing = [str(path) for path in files if not path.is_file()]
     if missing:
         raise PublishError(f"release asset does not exist: {', '.join(missing)}")
@@ -323,7 +370,7 @@ def main(argv: list[str]) -> int:
     job_token = os.environ.get("CI_JOB_TOKEN")
     if not job_token:
         raise PublishError("CI_JOB_TOKEN is required")
-    client = GitLabClient(args.api_url, args.project_id, job_token)
+    client = GitLabClient(args.api_url, args.project_id, args.project_url, job_token)
     published = [(path, client.publish_file(args.tag, path)) for path in files]
     client.ensure_release(args.tag, args.project_url.rstrip("/"), published)
     print(f"Published {len(files)} durable assets for {args.tag}")

@@ -72,23 +72,20 @@ prepare_claude_submission:
     - test "$CI_COMMIT_TAG" = "v$(python -c 'import json; print(json.load(open("skills/deep-review/.claude-plugin/plugin.json"))["version"])')"
     - python -m unittest discover -s tests -v
     - claude plugin validate --strict skills/deep-review
-    - git archive --format=tar.gz --prefix=deep-review/ --output="deep-review-$CI_COMMIT_TAG.tar.gz" "$CI_COMMIT_TAG:skills/deep-review"
-    - git archive --format=zip --prefix=deep-review/ --output="deep-review-$CI_COMMIT_TAG.zip" "$CI_COMMIT_TAG:skills/deep-review"
+    - mkdir release-assets
+    - git archive --format=tar.gz --prefix=deep-review/ --output="release-assets/deep-review-$CI_COMMIT_TAG.tar.gz" "$CI_COMMIT_TAG:skills/deep-review"
+    - git archive --format=zip --prefix=deep-review/ --output="release-assets/deep-review-$CI_COMMIT_TAG.zip" "$CI_COMMIT_TAG:skills/deep-review"
+    - cp deep-review-install.sh deep-review-install.ps1 release-assets/
+    - cd release-assets
     - sha256sum "deep-review-$CI_COMMIT_TAG.tar.gz" > "deep-review-$CI_COMMIT_TAG.tar.gz.sha256"
     - sha256sum "deep-review-$CI_COMMIT_TAG.zip" > "deep-review-$CI_COMMIT_TAG.zip.sha256"
     - sha256sum deep-review-install.sh > deep-review-install.sh.sha256
     - sha256sum deep-review-install.ps1 > deep-review-install.ps1.sha256
+    - cd ..
   artifacts:
     name: "deep-review-$CI_COMMIT_TAG"
     paths:
-      - "deep-review-$CI_COMMIT_TAG.tar.gz"
-      - "deep-review-$CI_COMMIT_TAG.tar.gz.sha256"
-      - "deep-review-$CI_COMMIT_TAG.zip"
-      - "deep-review-$CI_COMMIT_TAG.zip.sha256"
-      - "deep-review-install.sh"
-      - "deep-review-install.sh.sha256"
-      - "deep-review-install.ps1"
-      - "deep-review-install.ps1.sha256"
+      - release-assets/
     expire_in: 30 days
 
 publish_release:
@@ -110,11 +107,4 @@ publish_release:
       --project-id "$CI_PROJECT_ID"
       --project-url "$CI_PROJECT_URL"
       --tag "$CI_COMMIT_TAG"
-      "deep-review-$CI_COMMIT_TAG.tar.gz"
-      "deep-review-$CI_COMMIT_TAG.tar.gz.sha256"
-      "deep-review-$CI_COMMIT_TAG.zip"
-      "deep-review-$CI_COMMIT_TAG.zip.sha256"
-      deep-review-install.sh
-      deep-review-install.sh.sha256
-      deep-review-install.ps1
-      deep-review-install.ps1.sha256
+      --asset-directory release-assets

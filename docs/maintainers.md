@@ -38,6 +38,8 @@ The files under `skills/deep-review/references/` are normative. Update them and 
 
 The public plugin name `deep-review` is immutable after publication. Treat `skills/deep-review/.claude-plugin/plugin.json` as the authoritative explicit version. Before every release:
 
+`release-contract.json` is the versioned source of truth for installer client destinations and required release-asset names. The POSIX and PowerShell installers contain generated copies of the client table because they must choose a destination before downloading the package; contract tests require both copies to match exactly. The publisher discovers its complete asset roster from this contract instead of duplicating the list in CI arguments.
+
 1. Choose the semantic version: increment the major version for breaking changes, the minor version for backward-compatible features, or the patch version for backward-compatible fixes.
 2. Update `version` in `skills/deep-review/.claude-plugin/plugin.json` and add the same version to `skills/deep-review/CHANGELOG.md`.
 3. Confirm the packaged `skills/deep-review/LICENSE` is byte-for-byte identical to the repository `LICENSE`.
