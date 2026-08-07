@@ -143,7 +143,7 @@ class InstallerTests(unittest.TestCase):
         )
 
     def _run_interactive(
-        self, command: list[str], answers: str
+        self, command: list[str], interactions: list[tuple[str, str]]
     ) -> tuple[int, str]:
         if pty is None:
             self.skipTest("pseudo-terminals are unavailable")
@@ -161,14 +161,18 @@ class InstallerTests(unittest.TestCase):
         finally:
             os.close(slave)
         os.set_blocking(master, False)
-        os.write(master, answers.encode("utf-8"))
         output = bytearray()
-        deadline = time.monotonic() + 10
+        interaction_index = 0
+        search_offset = 0
+        deadline = time.monotonic() + 30
         try:
             while process.poll() is None:
                 if time.monotonic() >= deadline:
                     process.kill()
-                    self.fail("interactive installer did not finish within 10 seconds")
+                    self.fail(
+                        "interactive installer did not finish within 30 seconds:\n"
+                        + output.decode("utf-8", errors="replace")
+                    )
                 ready, _, _ = select.select([master], [], [], 0.1)
                 if ready:
                     try:
@@ -178,6 +182,15 @@ class InstallerTests(unittest.TestCase):
                         output.extend(chunk)
                     except (BlockingIOError, OSError):
                         break
+                while interaction_index < len(interactions):
+                    prompt, response = interactions[interaction_index]
+                    rendered = output.decode("utf-8", errors="replace")
+                    prompt_offset = rendered.find(prompt, search_offset)
+                    if prompt_offset < 0:
+                        break
+                    os.write(master, response.encode("utf-8"))
+                    search_offset = prompt_offset + len(prompt)
+                    interaction_index += 1
             process.wait(timeout=5)
             while True:
                 ready, _, _ = select.select([master], [], [], 0)
@@ -524,7 +537,11 @@ exec /bin/mv "$@"
     def test_posix_guided_install_lists_clients_and_confirms_destination(self) -> None:
         status, output = self._run_interactive(
             ["sh", str(POSIX_INSTALLER), "--asset-dir", str(self.assets)],
-            "claude-code\nproject\ny\n",
+            [
+                ("Client ID:", "claude-code\n"),
+                ("[user/project]:", "project\n"),
+                ("[y/N]:", "y\n"),
+            ],
         )
 
         self.assertEqual(status, 0, output)
@@ -539,7 +556,11 @@ exec /bin/mv "$@"
     def test_posix_guided_cancellation_changes_nothing(self) -> None:
         status, output = self._run_interactive(
             ["sh", str(POSIX_INSTALLER), "--asset-dir", str(self.assets)],
-            "codex\nproject\nn\n",
+            [
+                ("Client ID:", "codex\n"),
+                ("[user/project]:", "project\n"),
+                ("[y/N]:", "n\n"),
+            ],
         )
 
         self.assertNotEqual(status, 0)
@@ -550,7 +571,11 @@ exec /bin/mv "$@"
     def test_posix_guided_invalid_attempts_change_nothing(self) -> None:
         status, output = self._run_interactive(
             ["sh", str(POSIX_INSTALLER), "--asset-dir", str(self.assets)],
-            "unknown\nt3\nnot-a-client\n",
+            [
+                ("Client ID:", "unknown\n"),
+                ("Client ID:", "t3\n"),
+                ("Client ID:", "not-a-client\n"),
+            ],
         )
 
         self.assertNotEqual(status, 0)
@@ -561,7 +586,7 @@ exec /bin/mv "$@"
     def test_posix_guided_eof_changes_nothing(self) -> None:
         status, output = self._run_interactive(
             ["sh", str(POSIX_INSTALLER), "--asset-dir", str(self.assets)],
-            "\x04",
+            [("Client ID:", "\x04")],
         )
 
         self.assertNotEqual(status, 0)
@@ -574,7 +599,11 @@ exec /bin/mv "$@"
         self.assertEqual(first.returncode, 0, first.stderr)
         status, output = self._run_interactive(
             ["sh", str(POSIX_INSTALLER), "--update", "--asset-dir", str(self.assets)],
-            "claude-code\nproject\ny\n",
+            [
+                ("Client ID:", "claude-code\n"),
+                ("[user/project]:", "project\n"),
+                ("[y/N]:", "y\n"),
+            ],
         )
 
         self.assertEqual(status, 0, output)
@@ -605,7 +634,11 @@ exec /bin/mv "$@"
         status, output = self._run_interactive(
             ["pwsh", "-NoProfile", "-File", str(POWERSHELL_INSTALLER),
              "-AssetDirectory", str(self.assets)],
-            "claude-code\nproject\ny\n",
+            [
+                ("Client ID:", "claude-code\n"),
+                ("[user/project]:", "project\n"),
+                ("[y/N]:", "y\n"),
+            ],
         )
 
         self.assertEqual(status, 0, output)
