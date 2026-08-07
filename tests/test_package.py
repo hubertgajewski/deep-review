@@ -161,7 +161,18 @@ class PackageTests(unittest.TestCase):
             self.assertTrue(path.is_file(), path)
         self.assertEqual(manifest["version"], "1.1.0")
         self.assertIn("## [1.1.0] - 2026-08-07", (SKILL / "CHANGELOG.md").read_text(encoding="utf-8"))
-        self.assertIn("The examples install `v1.1.0`", installation)
+        self.assertIn("**[Deep Review releases page]", installation)
+        self.assertIn("If that page says there are no releases", installation)
+        for artifact in (
+            "deep-review-install.sh",
+            "deep-review-install.sh.sha256",
+            "deep-review-install.ps1",
+            "deep-review-install.ps1.sha256",
+        ):
+            self.assertIn(
+                f"releases/v1.1.0/downloads/deep-review/v1.1.0/{artifact}",
+                installation,
+            )
         self.assertLess(
             installation.index("## Install a verified release"),
             installation.index("## Advanced: install a pinned commit"),
