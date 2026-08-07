@@ -1,12 +1,8 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
     [string] $Client,
-    [Parameter(Mandatory = $true)]
-    [ValidateSet("User", "Project")]
     [string] $Scope,
-    [Parameter(Mandatory = $true)]
-    [string] $Version,
+    [string] $Version = "v1.1.1",
     [switch] $Update,
     [string] $AssetDirectory
 )
@@ -97,11 +93,12 @@ function Assert-SafeDestinationParent {
 }
 
 if ($Version -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
-    throw "-Version must be a semantic version such as v1.1.0"
+    throw "-Version must be a semantic version such as v1.1.1"
 }
 
 # Generated from release-contract.json; tests require an exact match.
-$ClientRootEntries = "amp=.agents/skills codex=.agents/skills cursor=.agents/skills devin=.agents/skills gemini=.agents/skills github-copilot=.agents/skills antigravity=.agents/skills goose=.agents/skills opencode=.agents/skills openhands=.agents/skills warp=.agents/skills windsurf=.agents/skills claude-code=.claude/skills cline=.cline/skills grok=.grok/skills junie=.junie/skills kiro=.kiro/skills mistral=.vibe/skills qwen=.qwen/skills"
+$ClientRootEntries = "amp=.agents/skills claude-code=.claude/skills cline=.cline/skills codex=.agents/skills cursor=.agents/skills devin=.agents/skills gemini=.agents/skills github-copilot=.agents/skills antigravity=.agents/skills goose=.agents/skills grok=.grok/skills junie=.junie/skills kiro=.kiro/skills mistral=.vibe/skills opencode=.agents/skills openhands=.agents/skills qwen=.qwen/skills warp=.agents/skills windsurf=.agents/skills"
+$ClientLabelEntries = "amp=Amp|claude-code=Claude Code|cline=Cline|codex=Codex|cursor=Cursor|devin=Devin|gemini=Gemini CLI|github-copilot=GitHub Copilot|antigravity=Google Antigravity|goose=Goose|grok=Grok Build CLI|junie=JetBrains Junie|kiro=Kiro|mistral=Mistral Vibe Code|opencode=OpenCode|openhands=OpenHands|qwen=Qwen Code|warp=Warp|windsurf=Windsurf"
 $UnsupportedClientEntries = "t3 claude-chat claude-cowork"
 $ClientRoots = @{}
 foreach ($Entry in $ClientRootEntries.Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)) {
@@ -111,7 +108,42 @@ foreach ($Entry in $ClientRootEntries.Split(" ", [System.StringSplitOptions]::Re
 $UnsupportedClients = $UnsupportedClientEntries.Split(
     " ", [System.StringSplitOptions]::RemoveEmptyEntries
 )
+$Guided = [string]::IsNullOrWhiteSpace($Client) -or [string]::IsNullOrWhiteSpace($Scope)
+if ($Guided -and [Console]::IsInputRedirected) {
+    throw "-Client and -Scope are required in non-interactive mode"
+}
+
+if ([string]::IsNullOrWhiteSpace($Client)) {
+    Write-Host "Choose your AI client:"
+    foreach ($Entry in $ClientLabelEntries.Split("|")) {
+        $Parts = $Entry.Split("=", 2)
+        Write-Host ("  {0,-18} {1}" -f $Parts[0], $Parts[1])
+    }
+    for ($Attempt = 0; $Attempt -lt 3; $Attempt++) {
+        $Client = Read-Host "Client ID"
+        if (-not [string]::IsNullOrWhiteSpace($Client) -and
+            $ClientRoots.ContainsKey($Client.ToLowerInvariant())) { break }
+        Write-Host "Unsupported client ID '$Client'. Try again."
+    }
+    if ([string]::IsNullOrWhiteSpace($Client) -or
+        -not $ClientRoots.ContainsKey($Client.ToLowerInvariant())) {
+        throw "No supported client was selected after 3 attempts; no files were changed"
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($Scope)) {
+    for ($Attempt = 0; $Attempt -lt 3; $Attempt++) {
+        $Scope = Read-Host "Install for this user or this project? [user/project]"
+        if ($Scope -in @("user", "project")) { break }
+        Write-Host "Scope must be 'user' or 'project'. Try again."
+    }
+    if ($Scope -notin @("user", "project")) {
+        throw "No valid scope was selected after 3 attempts; no files were changed"
+    }
+}
+
 $Client = $Client.ToLowerInvariant()
+$Scope = $Scope.ToLowerInvariant()
 
 if ($ClientRoots.ContainsKey($Client)) {
     $SkillRoot = $ClientRoots[$Client]
@@ -121,12 +153,15 @@ if ($ClientRoots.ContainsKey($Client)) {
     throw "Unsupported client '$Client'. See the installation guide for supported client IDs."
 }
 
-if ($Scope -eq "User") {
+if ($Scope -eq "user") {
     if ([string]::IsNullOrWhiteSpace($HOME)) {
         throw "HOME is not set; cannot resolve the user installation directory"
     }
     $Root = $HOME
 } else {
+    if ($Scope -ne "project") {
+        throw "-Scope must be 'User' or 'Project'"
+    }
     $Root = (Get-Location).Path
 }
 $Root = [System.IO.Path]::GetFullPath($Root)
@@ -139,6 +174,18 @@ if ($null -ne $Existing -and -not $Update) {
 if ($null -ne $Existing -and
     0 -ne ($Existing.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
     throw "$Destination is a symbolic link or reparse point; replace it manually before using -Update"
+}
+
+if ($Guided) {
+    Write-Host ""
+    Write-Host "Client: $Client"
+    Write-Host "Scope: $Scope"
+    Write-Host "Destination: $Destination"
+    Write-Host "Release: $Version"
+    $Confirmation = Read-Host "Continue? [y/N]"
+    if ($Confirmation -notin @("y", "Y", "yes", "YES", "Yes")) {
+        throw "Installation cancelled; no files were changed"
+    }
 }
 
 $Archive = "deep-review-$Version.zip"

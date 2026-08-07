@@ -4,7 +4,7 @@ Deep Review is a configurable, review-only Agent Skill that coordinates speciali
 
 ## Install
 
-Download the verified installer and checksum for your operating system from the [`v1.1.0` GitLab Release](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0), then follow the short [installation and update instructions](docs/installation.md#install-from-a-release). The installer supports user and project scope and selects the correct directory from your client ID.
+Paste the three verified-install commands for your operating system from the [`v1.1.1` installation guide](docs/installation.md#install-from-a-release). The guided installer asks for your AI client and user or project scope, then shows the destination before changing anything.
 
 ## Quick start
 

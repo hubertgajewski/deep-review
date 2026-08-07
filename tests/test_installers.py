@@ -7,21 +7,29 @@ import io
 import json
 import os
 from pathlib import Path
+import re
+import select
 import shutil
 import subprocess
 import tarfile
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 from urllib.error import HTTPError
 import zipfile
 
+try:
+    import pty
+except ImportError:  # pragma: no cover - Windows test hosts
+    pty = None  # type: ignore[assignment]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 POSIX_INSTALLER = ROOT / "deep-review-install.sh"
 POWERSHELL_INSTALLER = ROOT / "deep-review-install.ps1"
-VERSION = "v1.1.0"
+VERSION = "v1.1.1"
 RELEASE_CONTRACT = json.loads((ROOT / "release-contract.json").read_text(encoding="utf-8"))
 
 PUBLISH_SPEC = importlib.util.spec_from_file_location(
@@ -65,7 +73,7 @@ class InstallerTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def _create_assets(self, *, include_agents: bool = True, manifest_version: str = "1.1.0") -> None:
+    def _create_assets(self, *, include_agents: bool = True, manifest_version: str = "1.1.1") -> None:
         source = self.root / "package source" / "deep-review"
         source.mkdir(parents=True)
         (source / "SKILL.md").write_text("---\nname: deep-review\n---\n", encoding="utf-8")
@@ -133,6 +141,61 @@ class InstallerTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+
+    def _run_interactive(
+        self, command: list[str], answers: str
+    ) -> tuple[int, str]:
+        if pty is None:
+            self.skipTest("pseudo-terminals are unavailable")
+        master, slave = pty.openpty()
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=self.project,
+                env=self._environment(),
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                close_fds=True,
+            )
+        finally:
+            os.close(slave)
+        os.set_blocking(master, False)
+        os.write(master, answers.encode("utf-8"))
+        output = bytearray()
+        deadline = time.monotonic() + 10
+        try:
+            while process.poll() is None:
+                if time.monotonic() >= deadline:
+                    process.kill()
+                    self.fail("interactive installer did not finish within 10 seconds")
+                ready, _, _ = select.select([master], [], [], 0.1)
+                if ready:
+                    try:
+                        chunk = os.read(master, 65536)
+                        if not chunk:
+                            break
+                        output.extend(chunk)
+                    except (BlockingIOError, OSError):
+                        break
+            process.wait(timeout=5)
+            while True:
+                ready, _, _ = select.select([master], [], [], 0)
+                if not ready:
+                    break
+                try:
+                    chunk = os.read(master, 65536)
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+                except (BlockingIOError, OSError):
+                    break
+        finally:
+            os.close(master)
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+        return process.returncode, output.decode("utf-8", errors="replace")
 
     def _run_powershell_wrapper(
         self, name: str, body: str, *arguments: str
@@ -403,13 +466,153 @@ exec /bin/mv "$@"
             f"{client}={root}" for client, root in RELEASE_CONTRACT["client_roots"].items()
         )
         unsupported = " ".join(RELEASE_CONTRACT["unsupported_clients"])
+        labels = "|".join(
+            f"{client}={label}" for client, label in RELEASE_CONTRACT["client_labels"].items()
+        )
         posix = POSIX_INSTALLER.read_text(encoding="utf-8")
         powershell = POWERSHELL_INSTALLER.read_text(encoding="utf-8")
 
         self.assertIn(f"CLIENT_ROOT_ENTRIES='{client_entries}'", posix)
         self.assertIn(f"UNSUPPORTED_CLIENTS='{unsupported}'", posix)
+        self.assertIn(f"CLIENT_LABEL_ENTRIES='{labels}'", posix)
         self.assertIn(f'$ClientRootEntries = "{client_entries}"', powershell)
+        self.assertIn(f'$ClientLabelEntries = "{labels}"', powershell)
         self.assertIn(f'$UnsupportedClientEntries = "{unsupported}"', powershell)
+        self.assertEqual(
+            list(RELEASE_CONTRACT["client_roots"]),
+            list(RELEASE_CONTRACT["client_labels"]),
+        )
+        self.assertEqual(
+            list(RELEASE_CONTRACT["client_labels"].values()),
+            sorted(RELEASE_CONTRACT["client_labels"].values()),
+        )
+        manifest = json.loads(
+            (ROOT / "skills" / "deep-review" / ".claude-plugin" / "plugin.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(VERSION, f'v{manifest["version"]}')
+        self.assertIn(f"version={VERSION}", posix)
+        self.assertIn(f'[string] $Version = "{VERSION}"', powershell)
+
+    def test_posix_explicit_automation_uses_embedded_version_without_prompting(self) -> None:
+        result = self._run_posix(
+            "--client", "claude-code", "--scope", "project",
+            "--asset-dir", str(self.assets),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"Installed Deep Review {VERSION}", result.stdout)
+        self.assertTrue((self.project / ".claude" / "skills" / "deep-review" / "SKILL.md").is_file())
+
+    def test_posix_noninteractive_mode_requires_client_and_scope_without_mutation(self) -> None:
+        result = subprocess.run(
+            ["sh", str(POSIX_INSTALLER), "--asset-dir", str(self.assets)],
+            cwd=self.project,
+            env=self._environment(),
+            stdin=subprocess.DEVNULL,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required in non-interactive mode", result.stderr)
+        self.assertFalse((self.project / ".agents").exists())
+        self.assertEqual(list(self.tempfiles.iterdir()), [])
+
+    def test_posix_guided_install_lists_clients_and_confirms_destination(self) -> None:
+        status, output = self._run_interactive(
+            ["sh", str(POSIX_INSTALLER), "--asset-dir", str(self.assets)],
+            "claude-code\nproject\ny\n",
+        )
+
+        self.assertEqual(status, 0, output)
+        self.assertIn("amp", output)
+        self.assertIn("Amp", output)
+        self.assertIn("codex", output)
+        self.assertIn("Codex", output)
+        destination = self.project / ".claude" / "skills" / "deep-review"
+        self.assertIn(f"Destination: {destination.resolve()}", output)
+        self.assertTrue((destination / "SKILL.md").is_file())
+
+    def test_posix_guided_cancellation_changes_nothing(self) -> None:
+        status, output = self._run_interactive(
+            ["sh", str(POSIX_INSTALLER), "--asset-dir", str(self.assets)],
+            "codex\nproject\nn\n",
+        )
+
+        self.assertNotEqual(status, 0)
+        self.assertIn("installation cancelled", output)
+        self.assertFalse((self.project / ".agents").exists())
+        self.assertEqual(list(self.tempfiles.iterdir()), [])
+
+    def test_posix_guided_invalid_attempts_change_nothing(self) -> None:
+        status, output = self._run_interactive(
+            ["sh", str(POSIX_INSTALLER), "--asset-dir", str(self.assets)],
+            "unknown\nt3\nnot-a-client\n",
+        )
+
+        self.assertNotEqual(status, 0)
+        self.assertIn("after 3 attempts", output)
+        self.assertFalse((self.project / ".agents").exists())
+        self.assertEqual(list(self.tempfiles.iterdir()), [])
+
+    def test_posix_guided_eof_changes_nothing(self) -> None:
+        status, output = self._run_interactive(
+            ["sh", str(POSIX_INSTALLER), "--asset-dir", str(self.assets)],
+            "\x04",
+        )
+
+        self.assertNotEqual(status, 0)
+        self.assertIn("input ended", output)
+        self.assertFalse((self.project / ".agents").exists())
+        self.assertEqual(list(self.tempfiles.iterdir()), [])
+
+    def test_posix_guided_offline_update_reuses_verified_transaction(self) -> None:
+        first = self._run_installer("posix", client="claude-code")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        status, output = self._run_interactive(
+            ["sh", str(POSIX_INSTALLER), "--update", "--asset-dir", str(self.assets)],
+            "claude-code\nproject\ny\n",
+        )
+
+        self.assertEqual(status, 0, output)
+        self.assertIn("Verification: SHA-256", output)
+        destination = self.project / ".claude" / "skills" / "deep-review"
+        self.assertTrue((destination / "SKILL.md").is_file())
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
+    def test_powershell_noninteractive_mode_requires_client_and_scope_without_mutation(self) -> None:
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(POWERSHELL_INSTALLER),
+             "-AssetDirectory", str(self.assets)],
+            cwd=self.project,
+            env=self._environment(),
+            stdin=subprocess.DEVNULL,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required in non-interactive mode", result.stderr)
+        self.assertFalse((self.project / ".agents").exists())
+        self.assertEqual(list(self.tempfiles.iterdir()), [])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
+    def test_powershell_guided_install_confirms_destination(self) -> None:
+        status, output = self._run_interactive(
+            ["pwsh", "-NoProfile", "-File", str(POWERSHELL_INSTALLER),
+             "-AssetDirectory", str(self.assets)],
+            "claude-code\nproject\ny\n",
+        )
+
+        self.assertEqual(status, 0, output)
+        destination = self.project / ".claude" / "skills" / "deep-review"
+        self.assertIn("Choose your AI client", output)
+        self.assertIn(f"Destination: {destination.resolve()}", output)
+        self.assertTrue((destination / "SKILL.md").is_file())
 
     def test_posix_refuses_existing_destination_without_update(self) -> None:
         destination = self.project / ".agents" / "skills" / "deep-review"
@@ -516,9 +719,9 @@ cp \"$FAKE_ASSETS/${url##*/}\" \"$output\"
             log.read_text(encoding="utf-8").splitlines(),
             [
                 "https://gitlab.com/api/v4/projects/84183178/packages/generic/deep-review/"
-                f"1.1.0/deep-review-{VERSION}.tar.gz",
+                f"{VERSION[1:]}/deep-review-{VERSION}.tar.gz",
                 "https://gitlab.com/api/v4/projects/84183178/packages/generic/deep-review/"
-                f"1.1.0/deep-review-{VERSION}.tar.gz.sha256",
+                f"{VERSION[1:]}/deep-review-{VERSION}.tar.gz.sha256",
             ],
         )
 
@@ -677,8 +880,8 @@ cp \"$FAKE_ASSETS/${url##*/}\" \"$output\"
             self.assertEqual(
                 AssetHandler.requests,
                 [
-                    f"/1.1.0/deep-review-{VERSION}.zip",
-                    f"/1.1.0/deep-review-{VERSION}.zip.sha256",
+                    f"/{VERSION[1:]}/deep-review-{VERSION}.zip",
+                    f"/{VERSION[1:]}/deep-review-{VERSION}.zip.sha256",
                 ],
             )
 
@@ -794,7 +997,7 @@ class ReleasePublisherTests(unittest.TestCase):
                     "id": link_id,
                     "name": path.name,
                     "url": url,
-                    "direct_asset_path": f"/deep-review/{VERSION}/{path.name}",
+                    "direct_asset_path": f"/{path.name}",
                     "link_type": "package",
                 }
             )
@@ -848,7 +1051,7 @@ class ReleasePublisherTests(unittest.TestCase):
         self.assertEqual(
             url,
             "https://gitlab.com/api/v4/projects/group%2Fproject/packages/generic/"
-            "deep-review/1.1.0/asset.bin",
+            f"deep-review/{VERSION[1:]}/asset.bin",
         )
         self.assertEqual(opened.call_count, 2)
         get_request = opened.call_args_list[0].args[0]
@@ -921,7 +1124,7 @@ class ReleasePublisherTests(unittest.TestCase):
         link = payload["assets"]["links"][0]
         self.assertEqual(
             link["direct_asset_path"],
-            f"/deep-review/{VERSION}/{self.release_assets[0][0].name}",
+            f"/{self.release_assets[0][0].name}",
         )
         self.assertEqual(link["link_type"], "package")
         self.assertEqual(len(payload["assets"]["links"]), 8)
@@ -933,13 +1136,37 @@ class ReleasePublisherTests(unittest.TestCase):
             "deep-review-install.ps1.sha256",
         ):
             self.assertIn(
-                f"releases/{VERSION}/downloads/deep-review/{VERSION}/{artifact}",
+                f"releases/{VERSION}/downloads/{artifact}",
                 description,
             )
         self.assertIn("sha256sum -c deep-review-install.sh.sha256", description)
+        self.assertIn("--fail-early", description)
+        self.assertIn("--proto '=https'", description)
         self.assertIn("-split '\\s+'", description)
-        self.assertIn("deep-review-install.sh --client codex --scope user --version", description)
-        self.assertIn("$installer -Client codex -Scope User -Version", description)
+        self.assertIn("sh ./deep-review-install.sh", description)
+        self.assertIn("./deep-review-install.ps1", description)
+        self.assertNotIn("codex", description.lower())
+
+    def test_primary_documentation_matches_three_step_release_commands(self) -> None:
+        description = self.client._release_description(
+            VERSION, "https://gitlab.com/hubertgajewski-ai/deep-review"
+        )
+        installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        primary = installation.split("## Install from a release", 1)[1].split(
+            "## Automated installation", 1
+        )[0]
+
+        for language, expected_count in (("bash", 2), ("powershell", 1)):
+            pattern = rf"```{language}\n(.*?)\n```"
+            release_blocks = re.findall(pattern, description, flags=re.DOTALL)
+            documentation_blocks = re.findall(pattern, primary, flags=re.DOTALL)
+            self.assertEqual(len(release_blocks), expected_count)
+            self.assertEqual(documentation_blocks, release_blocks)
+            for block in release_blocks:
+                self.assertEqual(len(block.splitlines()), 3)
+
+        for internal_detail in ("mktemp", "trap ", "installDirectory", "TemporaryRoot"):
+            self.assertNotIn(internal_detail, primary)
 
     def test_release_posix_block_fails_closed_in_private_temporary_directory(self) -> None:
         description = self.client._release_description(
@@ -979,6 +1206,39 @@ class ReleasePublisherTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(marker.exists())
             self.assertEqual(list(temporary_root.iterdir()), [])
+
+    def test_release_posix_block_does_not_run_after_checksum_failure(self) -> None:
+        description = self.client._release_description(
+            VERSION, "https://gitlab.com/group/project"
+        )
+        block = description.split("```bash\n", 1)[1].split("\n```", 1)[0]
+        with tempfile.TemporaryDirectory(prefix="release checksum block ") as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_curl = fake_bin / "curl"
+            fake_curl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_curl.chmod(0o755)
+            marker = root / "installer-ran"
+            installer = root / "deep-review-install.sh"
+            installer.write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
+            (root / "deep-review-install.sh.sha256").write_text(
+                f"{'0' * 64}  deep-review-install.sh\n", encoding="ascii"
+            )
+            environment = os.environ.copy()
+            environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+
+            result = subprocess.run(
+                ["sh", "-c", block],
+                cwd=root,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(marker.exists())
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_release_powershell_block_fails_closed_in_private_temporary_directory(self) -> None:

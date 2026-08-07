@@ -7,11 +7,12 @@ PACKAGE_BASE_URL=https://gitlab.com/api/v4/projects/84183178/packages/generic/de
 
 usage() {
     cat <<EOF
-Usage: $PROGRAM --client CLIENT --scope user|project --version vMAJOR.MINOR.PATCH [--update] [--asset-dir DIR]
+Usage: $PROGRAM [--client CLIENT] [--scope user|project] [--version vMAJOR.MINOR.PATCH] [--update] [--asset-dir DIR]
 
 Downloads a versioned Deep Review package, verifies its SHA-256 checksum, and
-installs it in the selected client's standard skill directory. --asset-dir is
-for verified offline assets and tests; it must contain the archive and checksum.
+installs it in the selected client's standard skill directory. In a terminal,
+missing client and scope values are prompted for. Automation must provide both.
+--asset-dir is for verified offline assets; it must contain the archive and checksum.
 EOF
 }
 
@@ -51,7 +52,7 @@ assert_safe_parent() {
 
 client=
 scope=
-version=
+version=v1.1.1
 update=false
 asset_dir=
 
@@ -79,16 +80,55 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-[ -n "$client" ] || fail "--client is required"
-[ -n "$scope" ] || fail "--scope is required"
-[ -n "$version" ] || fail "--version is required"
-
 printf '%s\n' "$version" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' ||
-    fail "--version must be a semantic version such as v1.1.0"
+    fail "--version must be a semantic version such as v1.1.1"
 
 # Generated from release-contract.json; tests require an exact match.
-CLIENT_ROOT_ENTRIES='amp=.agents/skills codex=.agents/skills cursor=.agents/skills devin=.agents/skills gemini=.agents/skills github-copilot=.agents/skills antigravity=.agents/skills goose=.agents/skills opencode=.agents/skills openhands=.agents/skills warp=.agents/skills windsurf=.agents/skills claude-code=.claude/skills cline=.cline/skills grok=.grok/skills junie=.junie/skills kiro=.kiro/skills mistral=.vibe/skills qwen=.qwen/skills'
+CLIENT_ROOT_ENTRIES='amp=.agents/skills claude-code=.claude/skills cline=.cline/skills codex=.agents/skills cursor=.agents/skills devin=.agents/skills gemini=.agents/skills github-copilot=.agents/skills antigravity=.agents/skills goose=.agents/skills grok=.grok/skills junie=.junie/skills kiro=.kiro/skills mistral=.vibe/skills opencode=.agents/skills openhands=.agents/skills qwen=.qwen/skills warp=.agents/skills windsurf=.agents/skills'
+CLIENT_LABEL_ENTRIES='amp=Amp|claude-code=Claude Code|cline=Cline|codex=Codex|cursor=Cursor|devin=Devin|gemini=Gemini CLI|github-copilot=GitHub Copilot|antigravity=Google Antigravity|goose=Goose|grok=Grok Build CLI|junie=JetBrains Junie|kiro=Kiro|mistral=Mistral Vibe Code|opencode=OpenCode|openhands=OpenHands|qwen=Qwen Code|warp=Warp|windsurf=Windsurf'
 UNSUPPORTED_CLIENTS='t3 claude-chat claude-cowork'
+
+guided=false
+if [ -z "$client" ] || [ -z "$scope" ]; then
+    [ -t 0 ] || fail "--client and --scope are required in non-interactive mode"
+    guided=true
+fi
+
+if [ -z "$client" ]; then
+    printf 'Choose your AI client:\n' >&2
+    old_ifs=$IFS
+    IFS='|'
+    set -- $CLIENT_LABEL_ENTRIES
+    IFS=$old_ifs
+    for label_entry in "$@"; do
+        printf '  %-18s %s\n' "${label_entry%%=*}" "${label_entry#*=}" >&2
+    done
+    attempts=0
+    client_valid=false
+    while [ "$attempts" -lt 3 ]; do
+        printf 'Client ID: ' >&2
+        IFS= read -r client || fail "input ended before a client was selected; no files were changed"
+        for client_entry in $CLIENT_ROOT_ENTRIES; do
+            case $client_entry in "$client="*) client_valid=true; break ;; esac
+        done
+        [ "$client_valid" = false ] || break
+        attempts=$((attempts + 1))
+        printf "Unsupported client ID '%s'. Try again.\n" "$client" >&2
+    done
+    [ "$client_valid" = true ] || fail "no supported client was selected after 3 attempts; no files were changed"
+fi
+
+if [ -z "$scope" ]; then
+    attempts=0
+    while [ "$attempts" -lt 3 ]; do
+        printf 'Install for this user or this project? [user/project]: ' >&2
+        IFS= read -r scope || fail "input ended before a scope was selected; no files were changed"
+        case $scope in user|project) break ;; esac
+        attempts=$((attempts + 1))
+        printf "Scope must be 'user' or 'project'. Try again.\n" >&2
+    done
+    case $scope in user|project) ;; *) fail "no valid scope was selected after 3 attempts; no files were changed" ;; esac
+fi
 
 skill_root=
 for client_entry in $CLIENT_ROOT_ENTRIES; do
@@ -125,6 +165,13 @@ if { [ -e "$destination" ] || [ -L "$destination" ]; } && [ "$update" != true ];
 fi
 if [ -L "$destination" ]; then
     fail "$destination is a symbolic link; replace it manually before using --update"
+fi
+
+if [ "$guided" = true ]; then
+    printf '\nClient: %s\nScope: %s\nDestination: %s\nRelease: %s\n' "$client" "$scope" "$destination" "$version" >&2
+    printf 'Continue? [y/N]: ' >&2
+    IFS= read -r confirmation || fail "installation cancelled; no files were changed"
+    case $confirmation in y|Y|yes|YES|Yes) ;; *) fail "installation cancelled; no files were changed" ;; esac
 fi
 
 archive="deep-review-$version.tar.gz"

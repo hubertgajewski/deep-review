@@ -159,8 +159,8 @@ class PackageTests(unittest.TestCase):
             ROOT / "tests" / "test_installers.py",
         ):
             self.assertTrue(path.is_file(), path)
-        self.assertEqual(manifest["version"], "1.1.0")
-        self.assertIn("## [1.1.0] - 2026-08-07", (SKILL / "CHANGELOG.md").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["version"], "1.1.1")
+        self.assertIn("## [1.1.1] - 2026-08-07", (SKILL / "CHANGELOG.md").read_text(encoding="utf-8"))
         for token in (
             "installer_powershell_test:",
             "publish_release:",
@@ -1324,8 +1324,8 @@ class PackageTests(unittest.TestCase):
         )
         self.assertIn("## Install from a release", installation)
         self.assertIn("deep-review-install.sh.sha256", installation)
-        self.assertIn("--version v1.1.0 --update", installation)
-        self.assertIn("-Version v1.1.0 -Update", installation)
+        self.assertIn("sh ./deep-review-install.sh --update", installation)
+        self.assertIn(".\\deep-review-install.ps1 -Update", installation)
         self.assertIn("## Offline installation", installation)
         self.assertIn("../README.md#quick-start", installation)
         self.assertIn("Disable automatic pipelines", maintainers)
