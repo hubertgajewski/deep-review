@@ -38,7 +38,7 @@ test:
 installer_powershell_test:
   stage: test
   image:
-    name: "mcr.microsoft.com/powershell:7.4-ubuntu-22.04@sha256:62710e8f8aac7fd2e6dd35be8cb0c137577f1c9183a1d3a14dfa100b1cd27351"
+    name: "mcr.microsoft.com/powershell:7.4-ubuntu-22.04@sha256:62300a213a9293916333df2b014cd3a8f22fb0b0b65f2bb446aaf436bcf8c868"
     entrypoint: [""]
   interruptible: true
   timeout: 5m
