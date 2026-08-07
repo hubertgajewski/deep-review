@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "client_roots": {
+    "amp": ".agents/skills",
+    "codex": ".agents/skills",
+    "cursor": ".agents/skills",
+    "devin": ".agents/skills",
+    "gemini": ".agents/skills",
+    "github-copilot": ".agents/skills",
+    "antigravity": ".agents/skills",
+    "goose": ".agents/skills",
+    "opencode": ".agents/skills",
+    "openhands": ".agents/skills",
+    "warp": ".agents/skills",
+    "windsurf": ".agents/skills",
+    "claude-code": ".claude/skills",
+    "cline": ".cline/skills",
+    "grok": ".grok/skills",
+    "junie": ".junie/skills",
+    "kiro": ".kiro/skills",
+    "mistral": ".vibe/skills",
+    "qwen": ".qwen/skills"
+  },
+  "unsupported_clients": [
+    "t3",
+    "claude-chat",
+    "claude-cowork"
+  ],
+  "release_assets": [
+    "deep-review-{tag}.tar.gz",
+    "deep-review-{tag}.tar.gz.sha256",
+    "deep-review-{tag}.zip",
+    "deep-review-{tag}.zip.sha256",
+    "deep-review-install.sh",
+    "deep-review-install.sh.sha256",
+    "deep-review-install.ps1",
+    "deep-review-install.ps1.sha256"
+  ]
+}

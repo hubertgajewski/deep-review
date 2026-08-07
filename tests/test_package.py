@@ -144,6 +144,41 @@ class PackageTests(unittest.TestCase):
         ):
             self.assertIn(token, pipeline)
 
+    def test_verified_release_infrastructure_contract(self) -> None:
+        maintainers = (ROOT / "docs" / "maintainers.md").read_text(encoding="utf-8")
+        pipeline = (ROOT / ".gitlab-ci.yml").read_text(encoding="utf-8")
+        manifest = json.loads(
+            (SKILL / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )
+
+        for path in (
+            ROOT / "deep-review-install.sh",
+            ROOT / "deep-review-install.ps1",
+            ROOT / "release-contract.json",
+            ROOT / "scripts" / "publish_release.py",
+            ROOT / "tests" / "test_installers.py",
+        ):
+            self.assertTrue(path.is_file(), path)
+        self.assertEqual(manifest["version"], "1.1.0")
+        self.assertIn("## [1.1.0] - 2026-08-07", (SKILL / "CHANGELOG.md").read_text(encoding="utf-8"))
+        for token in (
+            "installer_powershell_test:",
+            "publish_release:",
+            "deep-review-$CI_COMMIT_TAG.zip",
+            "deep-review-install.sh.sha256",
+            "deep-review-install.ps1.sha256",
+            "python scripts/publish_release.py",
+            "--asset-directory release-assets",
+            'CI_COMMIT_REF_PROTECTED == "true"',
+        ):
+            self.assertIn(token, pipeline)
+        for token in (
+            "GitLab generic package registry",
+            "do not inherit the CI artifact's 30-day expiry",
+            "Publication is idempotent",
+        ):
+            self.assertIn(token, maintainers)
+
     def test_skill_is_concise_and_has_valid_frontmatter(self) -> None:
         text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
         self.assertLessEqual(len(text.splitlines()), 500)
@@ -1283,7 +1318,15 @@ class PackageTests(unittest.TestCase):
         for status in ("`ready`", "`blocked`", "`incomplete`"):
             self.assertIn(status, readme)
         self.assertIn("## Requirements", installation)
-        self.assertLess(installation.index("## Requirements"), installation.index("## Install a pinned copy"))
+        self.assertLess(
+            installation.index("## Requirements"),
+            installation.index("## Install a pinned copy from source"),
+        )
+        self.assertIn("## Install from a release", installation)
+        self.assertIn("deep-review-install.sh.sha256", installation)
+        self.assertIn("--version v1.1.0 --update", installation)
+        self.assertIn("-Version v1.1.0 -Update", installation)
+        self.assertIn("## Offline installation", installation)
         self.assertIn("../README.md#quick-start", installation)
         self.assertIn("Disable automatic pipelines", maintainers)
         self.assertIn("user-facing installation", agents)

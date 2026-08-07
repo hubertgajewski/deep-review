@@ -1,13 +1,79 @@
 # Installation
 
-Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep-review/`. Install that complete directory under a skill-discovery location supported by your AI client. Publication in the Claude community marketplace is planned; until that listing is available, use the pinned manual installation below.
+Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep-review/`. The verified release installers put the complete package in the correct directory for your client. Publication in the Claude community marketplace is planned; until that listing is available, use the release installer below.
 
 ## Requirements
 
-- **Git is required** to install Deep Review and resolve review scopes.
+- **Linux and macOS:** `curl`, `tar`, and either `sha256sum` or `shasum`.
+- **Windows:** PowerShell 7.
+- **Git is required to run Deep Review** and resolve repository review scopes.
 - **Python 3 is optional.** It enables the bundled deterministic cache and result-processing helpers; Deep Review can still review without persistent reuse when those helpers are unavailable.
 - **Remote review needs the provider CLI.** Authenticate `gh` for `--github-pr` or `glab` for `--gitlab-mr` before invoking the skill.
 - **The AI client must support Agent Skills** and the filesystem guarantees described under [Runtime host requirements](#runtime-host-requirements).
+
+## Install from a release
+
+These instructions install Deep Review `v1.1.0` for Codex at user scope. They do not pipe downloaded code into a shell: download the installer and checksum, verify them, and then run the local file.
+
+### Linux and macOS
+
+Download these two files into the same directory:
+
+- [`deep-review-install.sh`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.sh)
+- [`deep-review-install.sh.sha256`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.sh.sha256)
+
+Open a terminal in that directory and run:
+
+```bash
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c deep-review-install.sh.sha256
+else
+  shasum -a 256 -c deep-review-install.sh.sha256
+fi
+sh ./deep-review-install.sh --client codex --scope user --version v1.1.0
+```
+
+Continue only when the checksum command prints `deep-review-install.sh: OK`.
+
+### Windows PowerShell
+
+Download these two files into the same directory:
+
+- [`deep-review-install.ps1`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.ps1)
+- [`deep-review-install.ps1.sha256`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.ps1.sha256)
+
+Open PowerShell in that directory and run:
+
+```powershell
+$expected = ((Get-Content .\deep-review-install.ps1.sha256 -TotalCount 1) -split '\s+')[0]
+$actual = (Get-FileHash .\deep-review-install.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -cne $expected) { throw "Installer checksum verification failed" }
+.\deep-review-install.ps1 -Client codex -Scope User -Version v1.1.0
+```
+
+The installer reports the installed version, destination, checksum, and first review
+command. It stops without changing files if the destination or one of its
+client-directory parents is a symbolic link or Windows reparse point.
+
+### Install for another client or project
+
+Change only these installer arguments:
+
+| Argument | Values | Meaning |
+| --- | --- | --- |
+| Client | `codex`, `claude-code`, `cline`, `grok`, `junie`, `kiro`, `mistral`, `qwen`, or a shared-directory client listed below | Selects the client's skill directory. |
+| Scope | `user`/`User` or `project`/`Project` | Installs for your account or the current repository. |
+| Version | An exact release such as `v1.1.0` | Selects immutable versioned assets. |
+
+For example, a Claude Code project installation uses:
+
+```bash
+sh ./deep-review-install.sh --client claude-code --scope project --version v1.1.0
+```
+
+```powershell
+.\deep-review-install.ps1 -Client claude-code -Scope Project -Version v1.1.0
+```
 
 ## Choose where to install
 
@@ -47,9 +113,9 @@ Common native locations are:
 
 T3 Code uses the skill location of its active provider. Claude chat and Cowork use ZIP upload rather than a local discovery directory.
 
-## Install a pinned copy
+## Install a pinned copy from source
 
-Select the exact lowercase, 40-character upstream commit SHA that you reviewed. The examples intentionally refuse to overwrite an existing destination.
+Use this advanced alternative when release assets are unavailable or policy requires installation from a reviewed commit. Select the exact lowercase, 40-character upstream commit SHA that you reviewed. The examples intentionally refuse to overwrite an existing destination.
 
 ### Linux and macOS
 
@@ -197,7 +263,19 @@ Local and path reviews require a secure-open adapter that anchors mutable reads 
 
 ## Updating
 
-Deep Review has no automatic updater. To update a vendored or user copy:
+Download and verify the new release installer and checksum using the installation steps above, then add the update option:
+
+```bash
+sh ./deep-review-install.sh --client codex --scope user --version v1.1.0 --update
+```
+
+```powershell
+.\deep-review-install.ps1 -Client codex -Scope User -Version v1.1.0 -Update
+```
+
+The installer verifies and stages the complete new package before changing the destination. If activation fails, it restores the previous installation. It never merges old and new package files.
+
+For a source-installed or manually vendored copy:
 
 1. Select and review an exact upstream commit SHA, or verify a signed tag and record its commit.
 2. Compare `skills/deep-review/` with the installed copy.
@@ -206,3 +284,17 @@ Deep Review has no automatic updater. To update a vendored or user copy:
 5. Repeat the [verification steps](#verify-installation).
 
 Never automatically pull an unreviewed default branch into a trusted skill directory.
+
+## Offline installation
+
+Download the versioned archive and checksum from the same GitLab Release on a connected machine and move both files to one local directory. Then run the installer with that directory:
+
+```bash
+sh ./deep-review-install.sh --client codex --scope user --version v1.1.0 --asset-dir /path/to/assets
+```
+
+```powershell
+.\deep-review-install.ps1 -Client codex -Scope User -Version v1.1.0 -AssetDirectory C:\path\to\assets
+```
+
+Offline mode still verifies the archive checksum and package version before changing the destination.

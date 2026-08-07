@@ -4,8 +4,17 @@ All notable changes to the Deep Review plugin are documented in this file. Relea
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-07
+
 ### Added
 
+- Verified POSIX and PowerShell release installers with deterministic client and
+  scope mapping, checksum enforcement, linked-ancestor rejection, and transactional
+  updates.
+- Durable, version-addressable release packages, checksums, and installer assets
+  published from protected tags to GitLab Releases.
+- Direct release download, checksum, installation, update, and offline instructions,
+  backed by one versioned contract for client destinations and release assets.
 - A built-in C# language reviewer for compiled C#, C# scripts, and C# regions in
   Razor files, with package-owned generated-output exclusions and eight configurable
   semantic rules covering nullability, asynchronous tasks, cancellation, resource
