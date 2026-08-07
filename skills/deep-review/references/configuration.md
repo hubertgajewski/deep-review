@@ -106,11 +106,13 @@ Apply `deny_components` not only to the changed-file manifest but also before tr
 
 ## Language agents and rules
 
-The built-in language agents are `typescript`, `python`, `swift`, `java`, `javascript`, `groovy`, and `kotlin`. They are enabled by default and dispatch only for matching changed paths. `language_agents.disabled` is a string array of agent names. `language_rules.disabled` is a string array of complete namespaced rule IDs such as `typescript.no-explicit-any`.
+The built-in language agents are `typescript`, `python`, `swift`, `java`, `javascript`, `groovy`, `kotlin`, and `csharp`. They are enabled by default and dispatch only for matching changed paths. `language_agents.disabled` is a string array of agent names. `language_rules.disabled` is a string array of complete namespaced rule IDs such as `typescript.no-explicit-any`.
 
 Both arrays default to empty. Reject non-string items, duplicates, unknown agent names, unknown rule IDs, and unknown keys within either table. Report the configuration error and make the aggregate `incomplete`; never ignore or guess an invalid entry. Disabling an agent makes all its rules inactive. Listing one of that agent's rules as disabled as well is redundant but valid.
 
 Language paths and rule catalogs are package-owned and cannot be replaced by consumer configuration. Each matching language is dispatched once with only its enabled rule fragments, in the order declared by its built-in agent prompt. If an agent is disabled, emit `SKIPPED: disabled by trusted configuration`. If every rule is disabled, emit `SKIPPED: all rules disabled by trusted configuration`. A disabled rule is not reassigned to a general or consumer agent.
+
+C# trigger evaluation excludes package-recognized generated output before matching: paths under an exact lowercase `obj` component and final segments ending case-insensitively with `.g.cs`, `.g.i.cs`, `.designer.cs`, or `.generated.cs`. This dispatch exclusion is package-owned and remains active when a consumer replaces `large_diff.generated`; it does not remove those paths from the accepted manifest, bucketing, or general-reviewer triggers.
 
 All language rules use the global H/M/L blocking policy. Consumers may disable a rule, but cannot redefine its instructions, severity guidance, output schema, or safety constraints.
 

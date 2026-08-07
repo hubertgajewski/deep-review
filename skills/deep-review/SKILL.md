@@ -61,6 +61,7 @@ Descriptions default to 12,000 characters and have a package-owned 20,000-charac
 | javascript | [javascript.md](references/agents/javascript.md) | matching JavaScript path and enabled rules | matched | hml |
 | groovy | [groovy.md](references/agents/groovy.md) | matching Groovy path and enabled rules | matched | hml |
 | kotlin | [kotlin.md](references/agents/kotlin.md) | matching Kotlin path and enabled rules | matched | hml |
+| csharp | [csharp.md](references/agents/csharp.md) | matching C# path and enabled rules | matched | hml |
 
 Load additional trusted agents from `.deep-review/agents/*.md`. Require the frontmatter and behavior defined in [Agent contract](references/agent-contract.md). Reject malformed definitions as `incomplete`; never improvise a schema.
 

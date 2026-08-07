@@ -88,8 +88,11 @@ The general roster covers correctness, security, architecture, simplification, d
 - JavaScript
 - Groovy, including Gradle Groovy DSL and Jenkins Shared Libraries
 - Kotlin, including Gradle Kotlin DSL
+- C#, including C# scripts and C# regions in Razor files
 
 Language reviewers own only their documented language-semantic rules. General concerns such as dead imports, unused symbols, runtime correctness, security, architecture, and simplification remain with the corresponding general reviewers. The complete rule catalog is in [Configuration](docs/configuration.md#built-in-language-rules).
+
+Conventional generated C# output under `obj` or ending in `.g.cs`, `.g.i.cs`, `.designer.cs`, or `.generated.cs` does not dispatch the C# reviewer; general reviewers still receive those paths when their triggers match.
 
 ## Configuration
 

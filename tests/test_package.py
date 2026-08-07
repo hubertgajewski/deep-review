@@ -37,7 +37,7 @@ class PackageTests(unittest.TestCase):
             "references/providers/gitlab.md",
         ]
         required.extend(f"references/agents/{name}.md" for name in (
-            "architecture", "ci", "code", "docs", "groovy", "java", "javascript", "kotlin",
+            "architecture", "ci", "code", "csharp", "docs", "groovy", "java", "javascript", "kotlin",
             "project-checklist", "python", "security", "simplification", "swift", "typescript"
         ))
         for relative in required:
@@ -168,7 +168,7 @@ class PackageTests(unittest.TestCase):
         }
         agents = {path.stem: path for path in (SKILL / "references" / "agents").glob("*.md")}
         self.assertEqual(set(roster), set(agents))
-        self.assertEqual(len(roster), 14)
+        self.assertEqual(len(roster), 15)
         for name, (scope, schema) in roster.items():
             agent = agents[name]
             text = agent.read_text(encoding="utf-8")
@@ -1107,6 +1107,16 @@ class PackageTests(unittest.TestCase):
                 "kotlin.swallowed-cancellation",
                 "kotlin.run-blocking-in-suspend",
             ),
+            "csharp": (
+                "csharp.unsafe-null-forgiving",
+                "csharp.async-void",
+                "csharp.unobserved-task",
+                "csharp.sync-over-async",
+                "csharp.valuetask-consumption",
+                "csharp.cancellation-token-propagation",
+                "csharp.disposable-lifetime",
+                "csharp.equality-contract",
+            ),
         }
         expected_patterns = {
             "typescript": ("**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"),
@@ -1116,6 +1126,7 @@ class PackageTests(unittest.TestCase):
             "javascript": ("**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"),
             "groovy": ("**/*.groovy", "**/*.gradle", "Jenkinsfile"),
             "kotlin": ("**/*.kt", "**/*.kts"),
+            "csharp": ("**/*.cs", "**/*.csx", "**/*.razor", "**/*.cshtml"),
         }
         user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
         orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
@@ -1146,7 +1157,9 @@ class PackageTests(unittest.TestCase):
     def test_language_prompts_are_repository_neutral_and_exclude_general_dead_code(self) -> None:
         paths = [
             SKILL / "references" / "agents" / f"{language}.md"
-            for language in ("typescript", "python", "swift", "java", "javascript", "groovy", "kotlin")
+            for language in (
+                "typescript", "python", "swift", "java", "javascript", "groovy", "kotlin", "csharp"
+            )
         ]
         paths.extend((SKILL / "references" / "language-rules").glob("*/*.md"))
         combined = "\n".join(path.read_text(encoding="utf-8") for path in paths).lower()
@@ -1164,7 +1177,9 @@ class PackageTests(unittest.TestCase):
         ):
             self.assertNotIn(platform_term, swift)
 
-        for language in ("typescript", "python", "swift", "java", "javascript", "groovy", "kotlin"):
+        for language in (
+            "typescript", "python", "swift", "java", "javascript", "groovy", "kotlin", "csharp"
+        ):
             agent = (SKILL / "references" / "agents" / f"{language}.md").read_text(encoding="utf-8")
             self.assertIn("dead imports", agent)
             self.assertRegex(agent, r"unused (?:variables or )?symbols")
@@ -1188,7 +1203,9 @@ class PackageTests(unittest.TestCase):
             "unknown rule IDs", "duplicates", "aggregate `incomplete`"
         ):
             self.assertIn(token, config)
-        for language in ("typescript", "python", "swift", "java", "javascript", "groovy", "kotlin"):
+        for language in (
+            "typescript", "python", "swift", "java", "javascript", "groovy", "kotlin", "csharp"
+        ):
             self.assertIn(f"`{language}`", config)
         self.assertIn("only the enabled rule fragments", orchestration)
         self.assertIn("Never include a disabled fragment", orchestration)
@@ -1202,7 +1219,8 @@ class PackageTests(unittest.TestCase):
         for rule_id in (
             "typescript.no-explicit-any", "python.mutable-default", "swift.actor-isolation",
             "java.null-unboxing", "javascript.unsafe-optional-chaining",
-            "groovy.elvis-falsy-default", "kotlin.unsafe-not-null-assertion"
+            "groovy.elvis-falsy-default", "kotlin.unsafe-not-null-assertion",
+            "csharp.unsafe-null-forgiving"
         ):
             self.assertIn(rule_id, user_config)
 
@@ -1324,6 +1342,50 @@ class PackageTests(unittest.TestCase):
         self.assertIn("kotlin.platform-type-nullability", agent)
         self.assertIn("kotlin.platform-type-nullability", assertion)
         self.assertIn("kotlin.unsafe-not-null-assertion", platform)
+
+    def test_csharp_task_rule_precedence_is_explicit(self) -> None:
+        agent = (SKILL / "references" / "agents" / "csharp.md").read_text(encoding="utf-8")
+        unobserved = (
+            SKILL / "references" / "language-rules" / "csharp" / "unobserved-task.md"
+        ).read_text(encoding="utf-8")
+        for specific in (
+            "csharp.async-void",
+            "csharp.valuetask-consumption",
+            "csharp.sync-over-async",
+        ):
+            self.assertIn(specific, agent)
+            self.assertIn(specific, unobserved)
+        self.assertIn("distinct demonstrated impact", agent)
+
+    def test_csharp_razor_ownership_is_explicit(self) -> None:
+        agent = (SKILL / "references" / "agents" / "csharp.md").read_text(encoding="utf-8")
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
+        for pattern in ("**/*.razor", "**/*.cshtml"):
+            self.assertIn(f'  - "{pattern}"', agent)
+            self.assertIn(f"`{pattern}`", orchestration)
+        for excluded in ("HTML", "CSS", "JavaScript", "Razor layout", "framework policy"):
+            self.assertIn(excluded, orchestration)
+        self.assertIn("evaluate only C# constructs", agent)
+
+    def test_csharp_generated_output_is_excluded_before_dispatch(self) -> None:
+        config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
+        orchestration = (SKILL / "references" / "orchestration.md").read_text(encoding="utf-8")
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+
+        for suffix in (".g.cs", ".g.i.cs", ".designer.cs", ".generated.cs"):
+            self.assertIn(suffix, config)
+            self.assertIn(suffix, orchestration)
+            self.assertIn(suffix, user_config)
+        for text in (
+            "Before evaluating the C# language trigger",
+            "package-owned",
+            "generated-only C# change",
+            "SKIPPED: language trigger did not match",
+        ):
+            self.assertIn(text, orchestration)
+        self.assertIn("exact lowercase `obj` component", config)
+        self.assertIn("cannot be disabled by consumer configuration", orchestration)
+        self.assertIn("retain every accepted path in `CHANGED_FILES`", orchestration)
 
     def test_groovy_kotlin_dsl_and_jenkins_ownership_is_explicit(self) -> None:
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
