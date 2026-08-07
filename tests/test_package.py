@@ -254,18 +254,13 @@ class PackageTests(unittest.TestCase):
             captured = pattern.fullmatch(invalid_zero).group(1)
             self.assertFalse(any(digit != "0" for digit in captured), invalid_zero)
 
-        for example in (
-            "Use deep-review #123", "Use deep-review !123",
-            "/deep-review #123", "/deep-review !123",
-            "$deep-review #123", "$deep-review !123",
-            "@skills:deep-review #123", "@skills:deep-review !123",
-            "@deep-review #123", "@deep-review !123",
-        ):
+        for example in ("Use deep-review #123", "Use deep-review !123"):
             self.assertIn(example, readme)
-            self.assertIn(example, installation)
-        for document in (readme, installation):
-            self.assertIn("`#123` is the familiar GitHub-style reference", document)
-            self.assertIn("`!123` is GitLab merge-request notation", document)
+            self.assertNotIn(example, installation)
+        self.assertIn("--github-pr 123", readme)
+        self.assertIn("--gitlab-mr 123", readme)
+        self.assertIn("explicitly selects GitLab", readme)
+        self.assertIn("../README.md#quick-start", installation)
 
     def test_large_diff_and_restricted_environment_contracts_are_explicit(self) -> None:
         main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
@@ -636,6 +631,7 @@ class PackageTests(unittest.TestCase):
     def test_configuration_safety_contracts_are_explicit(self) -> None:
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
         contract = (SKILL / "references" / "agent-contract.md").read_text(encoding="utf-8")
+        user_config = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
         self.assertIn("triggers.project_checklist", config)
         self.assertIn("CHECKLIST_FAIL", config)
         self.assertIn(".env*", config)
@@ -645,6 +641,14 @@ class PackageTests(unittest.TestCase):
         self.assertIn("project_checklist = []", config)
         self.assertIn("orchestrator-owned transport metadata", contract)
         self.assertIn("duplicates another extension domain", contract)
+        normative_deny = re.search(r'^deny_components = (\[.*\])$', config, re.MULTILINE)
+        documented_deny = re.search(r'^deny_components = (\[.*\])$', user_config, re.MULTILINE)
+        self.assertIsNotNone(normative_deny)
+        self.assertIsNotNone(documented_deny)
+        self.assertEqual(
+            json.loads(documented_deny.group(1)),
+            json.loads(normative_deny.group(1)),
+        )
 
     def test_credential_redaction_contract_is_package_wide(self) -> None:
         skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
@@ -858,7 +862,7 @@ class PackageTests(unittest.TestCase):
 
         self.assertIn("No trigger, snapshot, prompt, bucket, or dependency hash", orchestration)
         self.assertIn("before blob retrieval or hunk construction", orchestration)
-        self.assertIn("One denied path fails the entire scope", user_config)
+        self.assertIn("denied path fails the entire scope", user_config.lower())
         self.assertIn("allowed/denied mixed change", user_config)
 
     def test_git_diff_evidence_disables_external_helpers(self) -> None:
@@ -1274,7 +1278,13 @@ class PackageTests(unittest.TestCase):
             "@skills:deep-review --base main", "@deep-review --base main",
         ):
             self.assertIn(invocation, readme)
-            self.assertIn(invocation, installation)
+            self.assertNotIn(invocation, installation)
+        self.assertLess(readme.index("## Quick start"), readme.index("## What it reviews"))
+        for status in ("`ready`", "`blocked`", "`incomplete`"):
+            self.assertIn(status, readme)
+        self.assertIn("## Requirements", installation)
+        self.assertLess(installation.index("## Requirements"), installation.index("## Install a pinned copy"))
+        self.assertIn("../README.md#quick-start", installation)
         self.assertIn("Disable automatic pipelines", maintainers)
         self.assertIn("user-facing installation", agents)
         self.assertIn("@AGENTS.md", claude)
@@ -1283,26 +1293,62 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Turn on confidentiality", security)
         self.assertNotIn("This issue is confidential", security)
 
-    def test_installation_clients_are_alphabetical_and_complete(self) -> None:
+    def test_relative_documentation_links_and_anchors_resolve(self) -> None:
+        documents = (
+            ROOT / "README.md",
+            ROOT / "CONTRIBUTING.md",
+            ROOT / "SECURITY.md",
+            ROOT / "docs" / "installation.md",
+            ROOT / "docs" / "configuration.md",
+            ROOT / "docs" / "maintainers.md",
+        )
+
+        def anchors(text: str) -> set[str]:
+            result: set[str] = set()
+            for heading in re.findall(r"^#{1,6} (.+)$", text, re.MULTILINE):
+                slug = re.sub(r"[^\w -]", "", heading.replace("`", "").lower())
+                result.add(re.sub(r"-+", "-", slug.replace(" ", "-")))
+            return result
+
+        root = ROOT.resolve()
+        for document in documents:
+            text = document.read_text(encoding="utf-8")
+            for raw_target in re.findall(r"\[[^]]+\]\(([^)]+)\)", text):
+                path_text, _, fragment = raw_target.partition("#")
+                if "://" in path_text:
+                    continue
+                target = document.resolve() if not path_text else (document.parent / path_text).resolve()
+                self.assertTrue(target.is_relative_to(root), f"{document}: {raw_target}")
+                self.assertTrue(target.exists(), f"{document}: {raw_target}")
+                if fragment and target.is_file():
+                    self.assertIn(
+                        fragment,
+                        anchors(target.read_text(encoding="utf-8")),
+                        f"{document}: {raw_target}",
+                    )
+
+    def test_installation_has_one_grouped_client_reference(self) -> None:
         installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
-        table = installation.split("## AI client locations", 1)[1].split(
-            "### Enterprise and system locations", 1
+        self.assertEqual(installation.count("## Client reference"), 1)
+        reference = installation.split("## Client reference", 1)[1].split(
+            "## Other installation environments", 1
         )[0]
-        clients = [
-            line.split("|", 2)[1].strip()
-            for line in table.splitlines()
-            if line.startswith("| ") and not line.startswith("| AI client") and not line.startswith("| ---")
-        ]
-        self.assertEqual(clients, sorted(clients, key=str.casefold))
-        self.assertEqual(len(clients), 20)
         for expected in (
-            "Amp", "Claude Code CLI and Claude Desktop", "Cline", "Codex CLI, IDE, and desktop",
-            "Cursor", "Devin", "Gemini CLI", "GitHub Copilot CLI, VS Code, and coding agent",
-            "Google Antigravity", "Goose", "Grok Build CLI", "JetBrains Junie", "Kiro",
-            "Mistral Vibe Code", "OpenCode", "OpenHands", "Qwen Code", "T3 Code", "Warp",
-            "Windsurf Cascade",
+            "Amp", "Claude Code", "Cline", "Codex", "Cursor", "Devin", "Gemini CLI",
+            "GitHub Copilot", "Google Antigravity", "Goose", "Grok Build CLI",
+            "JetBrains Junie", "Kiro", "Mistral Vibe Code", "OpenCode", "OpenHands",
+            "Qwen Code", "T3 Code", "Warp", "Windsurf",
         ):
-            self.assertIn(expected, clients)
+            self.assertIn(f"- [{expected}]", reference)
+
+    def test_installation_derives_non_default_destination_parents(self) -> None:
+        installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        self.assertIn("```bash\n(\nset -e", installation)
+        self.assertIn('mkdir -p "$(dirname "$review_destination")"', installation)
+        self.assertIn("$reviewParent = Split-Path -Parent $reviewDestination", installation)
+        self.assertIn("New-Item -ItemType Directory -Force -Path $reviewParent", installation)
+        self.assertNotIn("mkdir -p .agents/skills", installation)
+        self.assertNotIn("New-Item -ItemType Directory -Force .agents\\skills", installation)
 
     def test_consumer_namespace_is_not_used_by_built_ins(self) -> None:
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")
