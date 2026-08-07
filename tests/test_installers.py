@@ -688,12 +688,41 @@ class ReleasePublisherTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="deep review publisher ")
         self.asset = Path(self.temporary.name) / "asset.bin"
         self.asset.write_bytes(b"durable release asset")
+        required_names = (
+            f"deep-review-{VERSION}.tar.gz",
+            f"deep-review-{VERSION}.tar.gz.sha256",
+            f"deep-review-{VERSION}.zip",
+            f"deep-review-{VERSION}.zip.sha256",
+            "deep-review-install.sh",
+            "deep-review-install.sh.sha256",
+            "deep-review-install.ps1",
+            "deep-review-install.ps1.sha256",
+        )
+        self.release_assets: list[tuple[Path, str]] = []
+        for name in required_names:
+            path = Path(self.temporary.name) / name
+            path.write_bytes(name.encode("ascii"))
+            self.release_assets.append((path, f"https://gitlab.example/package/{name}"))
         self.client = PUBLISH_RELEASE.GitLabClient(
             "https://gitlab.example/api/v4", "group/project", "secret-job-token"
         )
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
+
+    def _existing_release(self) -> dict[str, object]:
+        links = []
+        for link_id, (path, url) in enumerate(self.release_assets, start=1):
+            links.append(
+                {
+                    "id": link_id,
+                    "name": path.name,
+                    "url": url,
+                    "direct_asset_path": f"/deep-review/{VERSION}/{path.name}",
+                    "link_type": "package",
+                }
+            )
+        return {"tag_name": VERSION, "assets": {"links": links}}
 
     def test_publish_file_uploads_missing_asset_without_exposing_token_in_url(self) -> None:
         not_found = HTTPError("https://example.invalid", 404, "missing", {}, io.BytesIO())
@@ -772,41 +801,194 @@ class ReleasePublisherTests(unittest.TestCase):
         self.client.ensure_release(
             VERSION,
             "https://gitlab.example/group/project",
-            [(self.asset, "https://gitlab.example/package/asset.bin")],
+            self.release_assets,
         )
 
         create_call = self.client.json_request.call_args_list[1]
         self.assertEqual(create_call.args[0], "POST")
-        link = create_call.kwargs["payload"]["assets"]["links"][0]
-        self.assertEqual(link["direct_asset_path"], f"/deep-review/{VERSION}/asset.bin")
+        payload = create_call.kwargs["payload"]
+        link = payload["assets"]["links"][0]
+        self.assertEqual(
+            link["direct_asset_path"],
+            f"/deep-review/{VERSION}/{self.release_assets[0][0].name}",
+        )
         self.assertEqual(link["link_type"], "package")
+        self.assertEqual(len(payload["assets"]["links"]), 8)
+        description = payload["description"]
+        for artifact in (
+            "deep-review-install.sh",
+            "deep-review-install.sh.sha256",
+            "deep-review-install.ps1",
+            "deep-review-install.ps1.sha256",
+        ):
+            self.assertIn(
+                f"releases/{VERSION}/downloads/deep-review/{VERSION}/{artifact}",
+                description,
+            )
+        self.assertIn("sha256sum -c deep-review-install.sh.sha256", description)
+        self.assertIn("-split '\\s+'", description)
+        self.assertIn("deep-review-install.sh --client codex --scope user --version", description)
+        self.assertIn("$installer -Client codex -Scope User -Version", description)
+
+    def test_release_posix_block_fails_closed_in_private_temporary_directory(self) -> None:
+        description = self.client._release_description(
+            VERSION, "https://gitlab.example/group/project"
+        )
+        block = description.split("```bash\n", 1)[1].split("\n```", 1)[0]
+        with tempfile.TemporaryDirectory(prefix="release block ") as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_curl = fake_bin / "curl"
+            fake_curl.write_text("#!/bin/sh\nexit 7\n", encoding="utf-8")
+            fake_curl.chmod(0o755)
+            marker = root / "stale-installer-ran"
+            (root / "deep-review-install.sh").write_text(
+                f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8"
+            )
+            temporary_root = root / "temporary"
+            temporary_root.mkdir()
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+                    "TMPDIR": str(temporary_root),
+                }
+            )
+
+            result = subprocess.run(
+                ["sh", "-c", block],
+                cwd=root,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(marker.exists())
+            self.assertEqual(list(temporary_root.iterdir()), [])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
+    def test_release_powershell_block_fails_closed_in_private_temporary_directory(self) -> None:
+        description = self.client._release_description(
+            VERSION, "https://gitlab.example/group/project"
+        )
+        block = description.split("```powershell\n", 1)[1].split("\n```", 1)[0]
+        with tempfile.TemporaryDirectory(prefix="release block ") as temporary:
+            root = Path(temporary)
+            marker = root / "stale-installer-ran"
+            preference_marker = root / "preference-preserved"
+            (root / "deep-review-install.ps1").write_text(
+                f"Set-Content -LiteralPath '{marker}' -Value ran\n", encoding="utf-8"
+            )
+            temporary_root = root / "temporary"
+            temporary_root.mkdir()
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "PREFERENCE_MARKER": str(preference_marker),
+                    "TMPDIR": str(temporary_root),
+                }
+            )
+            injected_failure = """
+function Invoke-WebRequest {
+    [CmdletBinding()]
+    param([string] $Uri, [string] $OutFile)
+    throw "injected download failure"
+}
+$ErrorActionPreference = "Continue"
+try {
+"""
+            verify_preference = """
+}
+catch {
+    if ($ErrorActionPreference -eq "Continue") {
+        Set-Content -LiteralPath $env:PREFERENCE_MARKER -Value preserved
+    }
+    throw
+}
+"""
+
+            result = subprocess.run(
+                [
+                    "pwsh",
+                    "-NoProfile",
+                    "-Command",
+                    injected_failure + block + verify_preference,
+                ],
+                cwd=root,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(marker.exists())
+            self.assertTrue(preference_marker.is_file())
+            self.assertEqual(list(temporary_root.iterdir()), [])
 
     def test_existing_release_is_updated_without_duplicate_asset_links(self) -> None:
-        url = "https://gitlab.example/package/asset.bin"
-        existing = {
-            "tag_name": VERSION,
-            "assets": {
-                "links": [
-                    {
-                        "id": 9,
-                        "name": self.asset.name,
-                        "url": url,
-                        "direct_asset_path": f"/deep-review/{VERSION}/{self.asset.name}",
-                        "link_type": "package",
-                    }
-                ]
-            },
-        }
+        existing = self._existing_release()
         self.client.json_request = mock.Mock(side_effect=[(200, existing), (200, existing)])
 
         self.client.ensure_release(
             VERSION,
             "https://gitlab.example/group/project",
-            [(self.asset, url)],
+            self.release_assets,
         )
 
         self.assertEqual(self.client.json_request.call_count, 2)
         self.assertEqual(self.client.json_request.call_args_list[1].args[0], "PUT")
+
+    def test_existing_release_publishes_install_description_only_after_link_repair(self) -> None:
+        for mode in ("missing", "stale"):
+            with self.subTest(mode=mode):
+                existing = self._existing_release()
+                links = existing["assets"]["links"]
+                assert isinstance(links, list)
+                if mode == "missing":
+                    links.pop(0)
+                    expected_method = "POST"
+                    expected_path = (
+                        f"/projects/{self.client.project}/releases/{VERSION}/assets/links"
+                    )
+                else:
+                    links[0]["url"] = "https://gitlab.example/wrong"
+                    expected_method = "PUT"
+                    expected_path = (
+                        f"/projects/{self.client.project}/releases/{VERSION}/assets/links/1"
+                    )
+                self.client.json_request = mock.Mock(
+                    side_effect=[
+                        (200, existing),
+                        PUBLISH_RELEASE.PublishError("injected link failure"),
+                    ]
+                )
+
+                with self.assertRaisesRegex(PUBLISH_RELEASE.PublishError, "injected link failure"):
+                    self.client.ensure_release(
+                        VERSION,
+                        "https://gitlab.example/group/project",
+                        self.release_assets,
+                    )
+
+                self.assertEqual(self.client.json_request.call_count, 2)
+                mutation = self.client.json_request.call_args_list[1]
+                self.assertEqual(mutation.args, (expected_method, expected_path))
+
+    def test_release_instructions_require_every_installation_asset(self) -> None:
+        self.client.json_request = mock.Mock()
+
+        with self.assertRaisesRegex(PUBLISH_RELEASE.PublishError, "required assets"):
+            self.client.ensure_release(
+                VERSION,
+                "https://gitlab.example/group/project",
+                self.release_assets[:-1],
+            )
+
+        self.client.json_request.assert_not_called()
 
     def test_null_release_shape_fails_closed(self) -> None:
         self.client.json_request = mock.Mock(return_value=(200, []))
@@ -814,7 +996,7 @@ class ReleasePublisherTests(unittest.TestCase):
             self.client.ensure_release(
                 VERSION,
                 "https://gitlab.example/group/project",
-                [(self.asset, "https://gitlab.example/package/asset.bin")],
+                self.release_assets,
             )
 
 

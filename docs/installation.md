@@ -13,44 +13,13 @@ Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep
 
 ## Install a verified release
 
-Installers are on the **[Deep Review releases page](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases)** under **Assets > Links**. If that page says there are no releases, a verified installer has not been published yet; use the [pinned-commit instructions](#advanced-install-a-pinned-commit) until one is available.
+1. Open the **[Deep Review releases page](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases)**.
+2. Open the version you want to install.
+3. Copy and run the **Linux and macOS** or **Windows PowerShell** block shown on that release page.
 
-For `v1.1.0`, the downloads will be:
+That block downloads the correct installer and checksum, verifies them, and installs the same release version. It defaults to Codex at user scope and shows the small change needed for another [client or scope](#installer-destinations). Do not pipe a downloaded installer directly into a shell.
 
-| System | Installer | Checksum |
-| --- | --- | --- |
-| Linux or macOS | [`deep-review-install.sh`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.sh) | [`deep-review-install.sh.sha256`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.sh.sha256) |
-| Windows | [`deep-review-install.ps1`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.ps1) | [`deep-review-install.ps1.sha256`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.ps1.sha256) |
-
-Do not use those links until the releases page lists `v1.1.0`. You may click both downloads above, or copy and paste the matching block below to download, verify, and install them. The examples install Deep Review for Codex at user scope. For another setup, replace `codex` with an [installer client ID](#installer-destinations) or change `user` to `project`.
-
-### Linux and macOS
-
-```bash
-version=v1.1.0
-release="https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/$version/downloads/deep-review/$version"
-curl --fail --location --remote-name "$release/deep-review-install.sh" --remote-name "$release/deep-review-install.sh.sha256"
-if command -v sha256sum >/dev/null 2>&1; then sha256sum -c deep-review-install.sh.sha256; else shasum -a 256 -c deep-review-install.sh.sha256; fi
-sh ./deep-review-install.sh --client codex --scope user --version "$version"
-```
-
-The checksum command must print `deep-review-install.sh: OK` before the installer runs.
-
-### Windows PowerShell
-
-```powershell
-$version = "v1.1.0"
-$release = "https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/$version/downloads/deep-review/$version"
-Invoke-WebRequest "$release/deep-review-install.ps1" -OutFile deep-review-install.ps1
-Invoke-WebRequest "$release/deep-review-install.ps1.sha256" -OutFile deep-review-install.ps1.sha256
-$expected = ((Get-Content ./deep-review-install.ps1.sha256 -TotalCount 1) -split '\s+')[0]
-if ((Get-FileHash ./deep-review-install.ps1 -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "Installer checksum verification failed" }
-./deep-review-install.ps1 -Client codex -Scope User -Version $version
-```
-
-PowerShell stops before installation if the checksum does not match.
-
-Keeping the downloaded installer as a file makes its checksum verifiable and lets you inspect it before running it. Do not pipe a downloaded installer directly into a shell.
+If the page says there are no releases, there is no verified installer to download yet. Use the [pinned-commit instructions](#advanced-install-a-pinned-commit) until a release is published. This guide deliberately does not link to assets for an unpublished version.
 
 The installer downloads the package for exactly that version into a private temporary directory, verifies its SHA-256 checksum, validates the complete package layout, and only then activates it. It prints the installed version, destination, verification result, and first review command. A failed download, checksum, extraction, or validation leaves the destination unchanged and removes temporary files.
 

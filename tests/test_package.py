@@ -162,29 +162,13 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(manifest["version"], "1.1.0")
         self.assertIn("## [1.1.0] - 2026-08-07", (SKILL / "CHANGELOG.md").read_text(encoding="utf-8"))
         self.assertIn("**[Deep Review releases page]", installation)
-        self.assertIn("If that page says there are no releases", installation)
-        for artifact in (
-            "deep-review-install.sh",
-            "deep-review-install.sh.sha256",
-            "deep-review-install.ps1",
-            "deep-review-install.ps1.sha256",
-        ):
-            self.assertIn(
-                f"releases/v1.1.0/downloads/deep-review/v1.1.0/{artifact}",
-                installation,
-            )
+        self.assertIn("there is no verified installer to download yet", installation)
+        self.assertIn("does not link to assets for an unpublished version", installation)
         self.assertLess(
             installation.index("## Install a verified release"),
             installation.index("## Advanced: install a pinned commit"),
         )
-        for token in (
-            "deep-review-install.sh --client codex --scope user --version",
-            "deep-review-install.ps1 -Client codex -Scope User -Version",
-            "--update",
-            "-Update",
-            "--client t3",
-            "sha256sum -c",
-        ):
+        for token in ("--update", "-Update", "--client t3"):
             self.assertIn(token, installation)
         self.assertNotIn("curl | sh", installation)
         self.assertNotIn("Invoke-Expression", installation)

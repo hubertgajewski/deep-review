@@ -165,12 +165,25 @@ class GitLabClient:
         project_url: str,
         assets: list[tuple[Path, str]],
     ) -> None:
+        required_names = {
+            f"deep-review-{tag}.tar.gz",
+            f"deep-review-{tag}.tar.gz.sha256",
+            f"deep-review-{tag}.zip",
+            f"deep-review-{tag}.zip.sha256",
+            "deep-review-install.sh",
+            "deep-review-install.sh.sha256",
+            "deep-review-install.ps1",
+            "deep-review-install.ps1.sha256",
+        }
+        missing_names = sorted(required_names - {path.name for path, _ in assets})
+        if missing_names:
+            raise PublishError(
+                "cannot publish install instructions without required assets: "
+                + ", ".join(missing_names)
+            )
         release_path = f"/projects/{self.project}/releases/{quote(tag, safe='')}"
         _, release = self.json_request("GET", release_path, allow_not_found=True)
-        description = (
-            f"Deep Review {tag}. Download and verify an installer before running it; "
-            f"see {project_url}/-/blob/{tag}/docs/installation.md."
-        )
+        description = self._release_description(tag, project_url)
         if release is None:
             links = [self._link_payload(tag, path, url) for path, url in assets]
             _, created = self.json_request(
@@ -189,11 +202,6 @@ class GitLabClient:
 
         if not isinstance(release, dict):
             raise PublishError("GitLab returned an invalid existing release")
-        self.json_request(
-            "PUT",
-            release_path,
-            payload={"name": f"Deep Review {tag}", "description": description},
-        )
         release_assets = release.get("assets")
         existing_links = release_assets.get("links") if isinstance(release_assets, dict) else None
         if not isinstance(existing_links, list):
@@ -215,6 +223,11 @@ class GitLabClient:
                 raise PublishError(f"GitLab returned asset link {path.name} without a numeric id")
             if any(current.get(key) != value for key, value in payload.items()):
                 self.json_request("PUT", f"{links_path}/{link_id}", payload=payload)
+        self.json_request(
+            "PUT",
+            release_path,
+            payload={"name": f"Deep Review {tag}", "description": description},
+        )
 
     @staticmethod
     def _link_payload(tag: str, path: Path, url: str) -> dict[str, str]:
@@ -224,6 +237,66 @@ class GitLabClient:
             "direct_asset_path": f"/deep-review/{tag}/{path.name}",
             "link_type": "package",
         }
+
+    @staticmethod
+    def _release_description(tag: str, project_url: str) -> str:
+        release = f"{project_url}/-/releases/{tag}/downloads/deep-review/{tag}"
+        return f"""Deep Review {tag}
+
+## Install
+
+These commands install Deep Review for Codex at user scope. Replace `codex` with another installer client ID or change `user` to `project` when needed. The [installation guide]({project_url}/-/blob/{tag}/docs/installation.md) lists every supported client and destination.
+
+Do not pipe a downloaded installer into a shell. The commands keep it as a file and verify its checksum before running it.
+
+### Linux and macOS
+
+Downloads: [`deep-review-install.sh`]({release}/deep-review-install.sh) and [`deep-review-install.sh.sha256`]({release}/deep-review-install.sh.sha256)
+
+```bash
+(
+set -eu
+install_directory="$(mktemp -d)"
+trap 'rm -rf "$install_directory"' EXIT HUP INT TERM
+cd "$install_directory"
+version={tag}
+release="{release}"
+curl --fail --location --remote-name "$release/deep-review-install.sh" --remote-name "$release/deep-review-install.sh.sha256"
+if command -v sha256sum >/dev/null 2>&1; then sha256sum -c deep-review-install.sh.sha256; else shasum -a 256 -c deep-review-install.sh.sha256; fi
+sh ./deep-review-install.sh --client codex --scope user --version "$version"
+)
+```
+
+The checksum command must print `deep-review-install.sh: OK` before the installer runs.
+
+### Windows PowerShell
+
+Downloads: [`deep-review-install.ps1`]({release}/deep-review-install.ps1) and [`deep-review-install.ps1.sha256`]({release}/deep-review-install.ps1.sha256)
+
+```powershell
+& {{
+$ErrorActionPreference = "Stop"
+$version = "{tag}"
+$release = "{release}"
+$installDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("deep-review-install-" + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $installDirectory | Out-Null
+try {{
+    $installer = Join-Path $installDirectory "deep-review-install.ps1"
+    $checksum = Join-Path $installDirectory "deep-review-install.ps1.sha256"
+    Invoke-WebRequest "$release/deep-review-install.ps1" -OutFile $installer -ErrorAction Stop
+    Invoke-WebRequest "$release/deep-review-install.ps1.sha256" -OutFile $checksum -ErrorAction Stop
+    $expected = ((Get-Content $checksum -TotalCount 1) -split '\\s+')[0]
+    if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) {{ throw "Installer checksum verification failed" }}
+    & $installer -Client codex -Scope User -Version $version
+}}
+finally {{
+    Remove-Item -Recurse -Force -LiteralPath $installDirectory -ErrorAction SilentlyContinue
+}}
+}}
+```
+
+PowerShell stops before installation if the checksum does not match.
+"""
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
