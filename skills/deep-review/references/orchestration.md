@@ -35,10 +35,13 @@ Every dispatched agent receives `CHANGED_FILES`, even when its inline matched di
 - javascript: dispatch once for `**/*.js`, `**/*.jsx`, `**/*.mjs`, or `**/*.cjs` when the agent and at least one rule are enabled
 - groovy: dispatch once for `**/*.groovy`, `**/*.gradle`, or exact root `Jenkinsfile` when the agent and at least one rule are enabled
 - kotlin: dispatch once for `**/*.kt` or `**/*.kts` when the agent and at least one rule are enabled
+- csharp: dispatch once for `**/*.cs`, `**/*.csx`, `**/*.razor`, or `**/*.cshtml` when the agent and at least one rule are enabled
 
 Treat `build.gradle` as Groovy and `build.gradle.kts` as Kotlin; the latter matches `**/*.kts`, not `**/*.gradle`. Gradle DSL and build-logic correctness remain code-review ownership, while Groovy and Kotlin own only their enabled language-semantic rules.
 
 Any changed `**/*.groovy` path dispatches both the Groovy language agent and the CI agent. This conservative overlap covers Jenkins Shared Library sources without treating a Groovy suffix as finding evidence: CI must demonstrate Jenkins Pipeline or Shared Library execution context and ignore ordinary Groovy application code. A changed root `Jenkinsfile` therefore dispatches both agents as well. Groovy owns only its enabled language-semantic rules there; Jenkins pipeline trust, credentials, execution policy, and other CI concerns remain CI ownership. Repository-specific Pipeline Script Paths and non-Groovy Shared Library resources cannot be inferred from a standard suffix and must be listed in trusted `triggers.ci`.
+
+For matched `**/*.razor` and `**/*.cshtml` paths, C# owns only enabled C# language and .NET standard-library semantics inside C# regions. HTML, CSS, JavaScript, Razor layout, framework policy, and other non-C# content remain outside the C# language agent's domain. Matching is file-level for deterministic dispatch; the reviewer must establish that finding evidence belongs to a C# construct before reporting it.
 
 Consumer agent `applies_to` patterns are deterministic path triggers. New matching agents run even if they were skipped in the previous iteration.
 

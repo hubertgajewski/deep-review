@@ -110,7 +110,7 @@ All built-in language reviewers are enabled by default. Disable a complete revie
 disabled = ["swift", "groovy"]
 ```
 
-Supported names are `typescript`, `python`, `swift`, `java`, `javascript`, `groovy`, and `kotlin`. General reviewers still run when their triggers match.
+Supported names are `typescript`, `python`, `swift`, `java`, `javascript`, `groovy`, `kotlin`, and `csharp`. General reviewers still run when their triggers match.
 
 ## Disable individual language rules
 
@@ -134,6 +134,7 @@ disabled = [
 - JavaScript: `javascript.unsafe-optional-chaining`, `javascript.loss-of-precision`, `javascript.unsafe-finally`, `javascript.async-promise-executor`, `javascript.async-foreach`, `javascript.unhandled-promise`
 - Groovy: `groovy.elvis-falsy-default`, `groovy.unsafe-safe-navigation`, `groovy.gstring-map-key`, `groovy.equality-identity-confusion`, `groovy.regex-find-vs-match`, `groovy.division-semantics`
 - Kotlin: `kotlin.unsafe-not-null-assertion`, `kotlin.platform-type-nullability`, `kotlin.array-equality`, `kotlin.shallow-data-class-copy`, `kotlin.swallowed-cancellation`, `kotlin.run-blocking-in-suspend`
+- C#: `csharp.unsafe-null-forgiving`, `csharp.async-void`, `csharp.unobserved-task`, `csharp.sync-over-async`, `csharp.valuetask-consumption`, `csharp.cancellation-token-propagation`, `csharp.disposable-lifetime`, `csharp.equality-contract`
 
 Consumers can disable these rules but cannot redefine their instructions, severity guidance, output schema, or safety constraints.
 

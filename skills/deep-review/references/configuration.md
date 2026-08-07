@@ -106,7 +106,7 @@ Apply `deny_components` not only to the changed-file manifest but also before tr
 
 ## Language agents and rules
 
-The built-in language agents are `typescript`, `python`, `swift`, `java`, `javascript`, `groovy`, and `kotlin`. They are enabled by default and dispatch only for matching changed paths. `language_agents.disabled` is a string array of agent names. `language_rules.disabled` is a string array of complete namespaced rule IDs such as `typescript.no-explicit-any`.
+The built-in language agents are `typescript`, `python`, `swift`, `java`, `javascript`, `groovy`, `kotlin`, and `csharp`. They are enabled by default and dispatch only for matching changed paths. `language_agents.disabled` is a string array of agent names. `language_rules.disabled` is a string array of complete namespaced rule IDs such as `typescript.no-explicit-any`.
 
 Both arrays default to empty. Reject non-string items, duplicates, unknown agent names, unknown rule IDs, and unknown keys within either table. Report the configuration error and make the aggregate `incomplete`; never ignore or guess an invalid entry. Disabling an agent makes all its rules inactive. Listing one of that agent's rules as disabled as well is redundant but valid.
 
