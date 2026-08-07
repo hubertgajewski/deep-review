@@ -35,6 +35,19 @@ test:
   script:
     - python -m unittest discover -s tests -v
 
+installer_powershell_test:
+  stage: test
+  image:
+    name: "mcr.microsoft.com/powershell:7.4-ubuntu-22.04@sha256:62710e8f8aac7fd2e6dd35be8cb0c137577f1c9183a1d3a14dfa100b1cd27351"
+    entrypoint: [""]
+  interruptible: true
+  timeout: 5m
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends python3
+  script:
+    - python3 -m unittest tests.test_installers -v
+
 prepare_claude_submission:
   stage: release
   image: "python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6"
@@ -60,10 +73,48 @@ prepare_claude_submission:
     - python -m unittest discover -s tests -v
     - claude plugin validate --strict skills/deep-review
     - git archive --format=tar.gz --prefix=deep-review/ --output="deep-review-$CI_COMMIT_TAG.tar.gz" "$CI_COMMIT_TAG:skills/deep-review"
+    - git archive --format=zip --prefix=deep-review/ --output="deep-review-$CI_COMMIT_TAG.zip" "$CI_COMMIT_TAG:skills/deep-review"
     - sha256sum "deep-review-$CI_COMMIT_TAG.tar.gz" > "deep-review-$CI_COMMIT_TAG.tar.gz.sha256"
+    - sha256sum "deep-review-$CI_COMMIT_TAG.zip" > "deep-review-$CI_COMMIT_TAG.zip.sha256"
+    - sha256sum deep-review-install.sh > deep-review-install.sh.sha256
+    - sha256sum deep-review-install.ps1 > deep-review-install.ps1.sha256
   artifacts:
     name: "deep-review-$CI_COMMIT_TAG"
     paths:
       - "deep-review-$CI_COMMIT_TAG.tar.gz"
       - "deep-review-$CI_COMMIT_TAG.tar.gz.sha256"
+      - "deep-review-$CI_COMMIT_TAG.zip"
+      - "deep-review-$CI_COMMIT_TAG.zip.sha256"
+      - "deep-review-install.sh"
+      - "deep-review-install.sh.sha256"
+      - "deep-review-install.ps1"
+      - "deep-review-install.ps1.sha256"
     expire_in: 30 days
+
+publish_release:
+  stage: release
+  image: "python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6"
+  interruptible: false
+  timeout: 5m
+  resource_group: "release-$CI_COMMIT_TAG"
+  needs:
+    - job: prepare_claude_submission
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/ && $CI_COMMIT_REF_PROTECTED == "true"'
+    - when: never
+  script:
+    - >-
+      python scripts/publish_release.py
+      --api-url "$CI_API_V4_URL"
+      --project-id "$CI_PROJECT_ID"
+      --project-url "$CI_PROJECT_URL"
+      --tag "$CI_COMMIT_TAG"
+      "deep-review-$CI_COMMIT_TAG.tar.gz"
+      "deep-review-$CI_COMMIT_TAG.tar.gz.sha256"
+      "deep-review-$CI_COMMIT_TAG.zip"
+      "deep-review-$CI_COMMIT_TAG.zip.sha256"
+      deep-review-install.sh
+      deep-review-install.sh.sha256
+      deep-review-install.ps1
+      deep-review-install.ps1.sha256
