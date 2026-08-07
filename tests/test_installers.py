@@ -188,6 +188,167 @@ class InstallerTests(unittest.TestCase):
             check=False,
         )
 
+    def _installer_arguments(
+        self, platform: str, *, client: str = "codex", update: bool = False
+    ) -> tuple[str, ...]:
+        if platform == "posix":
+            arguments = (
+                "--client", client, "--scope", "project", "--version", VERSION,
+                "--asset-dir", str(self.assets),
+            )
+            return (*arguments, "--update") if update else arguments
+        if platform == "powershell":
+            arguments = (
+                "-Client", client, "-Scope", "Project", "-Version", VERSION,
+                "-AssetDirectory", str(self.assets),
+            )
+            return (*arguments, "-Update") if update else arguments
+        raise ValueError(f"unsupported installer platform: {platform}")
+
+    def _run_installer(
+        self, platform: str, *, client: str = "codex", update: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        arguments = self._installer_arguments(platform, client=client, update=update)
+        if platform == "posix":
+            return self._run_posix(*arguments)
+        return self._run_powershell(*arguments)
+
+    def _existing_destination(self, marker_text: str) -> tuple[Path, Path]:
+        destination = self.project / ".agents" / "skills" / "deep-review"
+        destination.mkdir(parents=True)
+        marker = destination / "existing.txt"
+        marker.write_text(marker_text, encoding="utf-8")
+        return destination, marker
+
+    def _run_with_failed_backup_cleanup(
+        self, platform: str
+    ) -> subprocess.CompletedProcess[str]:
+        arguments = self._installer_arguments(platform, update=True)
+        if platform == "powershell":
+            return self._run_powershell_with_failed_backup_cleanup(*arguments)
+
+        fake_rm = self.fake_bin / "rm"
+        fake_rm.write_text(
+            """#!/bin/sh
+case "$*" in
+    *'.deep-review.backup.'*) exit 1 ;;
+esac
+exec /bin/rm "$@"
+""",
+            encoding="utf-8",
+        )
+        fake_rm.chmod(0o755)
+        environment = self._environment(PATH=f"{self.fake_bin}{os.pathsep}{os.environ['PATH']}")
+        return self._run_posix(*arguments, environment=environment)
+
+    def _run_with_failed_activation(self, platform: str) -> subprocess.CompletedProcess[str]:
+        arguments = self._installer_arguments(platform, update=True)
+        if platform == "powershell":
+            return self._run_powershell_with_failed_activation(*arguments)
+
+        fake_mv = self.fake_bin / "mv"
+        fake_mv.write_text(
+            """#!/bin/sh
+case $1 in
+    */.deep-review.stage.*) exit 1 ;;
+esac
+exec /bin/mv "$@"
+""",
+            encoding="utf-8",
+        )
+        fake_mv.chmod(0o755)
+        environment = self._environment(PATH=f"{self.fake_bin}{os.pathsep}{os.environ['PATH']}")
+        return self._run_posix(*arguments, environment=environment)
+
+    def _write_adversarial_archive(self, platform: str, *, excessive_entries: bool) -> None:
+        if platform == "posix":
+            archive_path = self.assets / f"deep-review-{VERSION}.tar.gz"
+            with tarfile.open(archive_path, "w:gz") as archive:
+                if excessive_entries:
+                    for index in range(10001):
+                        archive.addfile(tarfile.TarInfo(f"deep-review/entry-{index}"))
+                else:
+                    entry = tarfile.TarInfo("deep-review/../../escaped.txt")
+                    entry.size = 7
+                    archive.addfile(entry, io.BytesIO(b"escaped"))
+        else:
+            archive_path = self.assets / f"deep-review-{VERSION}.zip"
+            with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                if excessive_entries:
+                    for index in range(10001):
+                        archive.writestr(f"deep-review/entry-{index}", "")
+                else:
+                    archive.writestr("deep-review/../../escaped.txt", "escaped")
+        self._write_checksum(archive_path)
+
+    def _exercise_update_replacement(self, platform: str) -> None:
+        destination, marker = self._existing_destination("replace")
+        result = self._run_installer(platform, update=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(marker.exists())
+        self.assertTrue((destination / "SKILL.md").is_file())
+        self.assertEqual(list(destination.parent.glob(".deep-review.backup.*")), [])
+        self.assertFalse((destination.parent / ".deep-review.install.lock").exists())
+
+    def _exercise_backup_cleanup_failure(self, platform: str) -> None:
+        destination, _ = self._existing_destination("previous")
+        result = self._run_with_failed_backup_cleanup(platform)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((destination / "SKILL.md").is_file())
+        self.assertFalse((destination / ".deep-review-installing").exists())
+        backups = list(destination.parent.glob(".deep-review.backup.*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / "deep-review" / "existing.txt").read_text(), "previous")
+        self.assertIn("installed successfully", (result.stdout + result.stderr).lower())
+
+    def _exercise_failed_activation(self, platform: str) -> None:
+        destination, marker = self._existing_destination("keep")
+        result = self._run_with_failed_activation(platform)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "could not activate" if platform == "posix" else "injected activation failure",
+            result.stderr,
+        )
+        self.assertEqual(marker.read_text(encoding="utf-8"), "keep")
+        self.assertEqual(list(destination.parent.glob(".deep-review.backup.*")), [])
+        self.assertFalse((destination.parent / ".deep-review.install.lock").exists())
+
+    def _exercise_foreign_lock(self, platform: str) -> None:
+        parent = self.project / ".agents" / "skills"
+        lock = parent / ".deep-review.install.lock"
+        lock.mkdir(parents=True)
+        owner = lock / "owner"
+        owner.write_text("another installer", encoding="utf-8")
+
+        result = self._run_installer(platform)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("another installation is active", result.stderr.lower())
+        self.assertEqual(owner.read_text(encoding="utf-8"), "another installer")
+
+    def _exercise_unsupported_client(self, platform: str) -> None:
+        result = self._run_installer(platform, client="t3")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no deterministic local destination", result.stderr)
+        self.assertFalse((self.project / ".agents").exists())
+
+    def _exercise_adversarial_archive(self, platform: str, *, excessive_entries: bool) -> None:
+        self._write_adversarial_archive(platform, excessive_entries=excessive_entries)
+        result = self._run_installer(platform)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "10000-entry safety limit" if excessive_entries else "unsafe path",
+            result.stderr,
+        )
+        self.assertFalse((self.project / ".agents").exists())
+        if not excessive_entries:
+            self.assertFalse((self.tempfiles / "escaped.txt").exists())
+
     def test_posix_installs_project_package_and_reports_verification(self) -> None:
         result = self._run_posix(
             "--client", "codex", "--scope", "project", "--version", VERSION,
@@ -242,94 +403,16 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(marker.read_text(encoding="utf-8"), "keep")
 
     def test_posix_update_replaces_complete_destination(self) -> None:
-        destination = self.project / ".agents" / "skills" / "deep-review"
-        destination.mkdir(parents=True)
-        marker = destination / "existing.txt"
-        marker.write_text("replace", encoding="utf-8")
-
-        result = self._run_posix(
-            "--client", "codex", "--scope", "project", "--version", VERSION,
-            "--asset-dir", str(self.assets), "--update",
-        )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(marker.exists())
-        self.assertTrue((destination / "SKILL.md").is_file())
+        self._exercise_update_replacement("posix")
 
     def test_posix_backup_cleanup_failure_keeps_successful_install(self) -> None:
-        destination = self.project / ".agents" / "skills" / "deep-review"
-        destination.mkdir(parents=True)
-        (destination / "existing.txt").write_text("previous", encoding="utf-8")
-        fake_rm = self.fake_bin / "rm"
-        fake_rm.write_text(
-            """#!/bin/sh
-case "$*" in
-    *'.deep-review.backup.'*) exit 1 ;;
-esac
-exec /bin/rm "$@"
-""",
-            encoding="utf-8",
-        )
-        fake_rm.chmod(0o755)
-        environment = self._environment(PATH=f"{self.fake_bin}{os.pathsep}{os.environ['PATH']}")
-
-        result = self._run_posix(
-            "--client", "codex", "--scope", "project", "--version", VERSION,
-            "--asset-dir", str(self.assets), "--update", environment=environment,
-        )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((destination / "SKILL.md").is_file())
-        self.assertFalse((destination / ".deep-review-installing").exists())
-        backups = list(destination.parent.glob(".deep-review.backup.*"))
-        self.assertEqual(len(backups), 1)
-        self.assertEqual((backups[0] / "deep-review" / "existing.txt").read_text(), "previous")
-        self.assertIn("installed successfully", (result.stdout + result.stderr).lower())
+        self._exercise_backup_cleanup_failure("posix")
 
     def test_posix_failed_activation_restores_existing_destination(self) -> None:
-        destination = self.project / ".agents" / "skills" / "deep-review"
-        destination.mkdir(parents=True)
-        marker = destination / "existing.txt"
-        marker.write_text("keep", encoding="utf-8")
-        fake_mv = self.fake_bin / "mv"
-        fake_mv.write_text(
-            """#!/bin/sh
-case $1 in
-    */.deep-review.stage.*) exit 1 ;;
-esac
-exec /bin/mv \"$@\"
-""",
-            encoding="utf-8",
-        )
-        fake_mv.chmod(0o755)
-        environment = self._environment(PATH=f"{self.fake_bin}{os.pathsep}{os.environ['PATH']}")
-
-        result = self._run_posix(
-            "--client", "codex", "--scope", "project", "--version", VERSION,
-            "--asset-dir", str(self.assets), "--update", environment=environment,
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("could not activate", result.stderr)
-        self.assertEqual(marker.read_text(encoding="utf-8"), "keep")
-        self.assertEqual(list(destination.parent.glob(".deep-review.backup.*")), [])
-        self.assertFalse((destination.parent / ".deep-review.install.lock").exists())
+        self._exercise_failed_activation("posix")
 
     def test_posix_does_not_remove_another_installers_lock(self) -> None:
-        parent = self.project / ".agents" / "skills"
-        lock = parent / ".deep-review.install.lock"
-        lock.mkdir(parents=True)
-        owner = lock / "owner"
-        owner.write_text("another installer", encoding="utf-8")
-
-        result = self._run_posix(
-            "--client", "codex", "--scope", "project", "--version", VERSION,
-            "--asset-dir", str(self.assets),
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("another installation is active", result.stderr)
-        self.assertEqual(owner.read_text(encoding="utf-8"), "another installer")
+        self._exercise_foreign_lock("posix")
 
     @unittest.skipUnless(hasattr(os, "symlink"), "symbolic links are unavailable")
     def test_posix_update_refuses_symbolic_link_destination(self) -> None:
@@ -468,38 +551,10 @@ cp \"$FAKE_ASSETS/${url##*/}\" \"$output\"
         self.assertFalse((self.project / ".agents").exists())
 
     def test_posix_rejects_archive_path_traversal_before_extraction(self) -> None:
-        archive_path = self.assets / f"deep-review-{VERSION}.tar.gz"
-        with tarfile.open(archive_path, "w:gz") as archive:
-            entry = tarfile.TarInfo("deep-review/../../escaped.txt")
-            entry.size = 7
-            archive.addfile(entry, io.BytesIO(b"escaped"))
-        self._write_checksum(archive_path)
-
-        result = self._run_posix(
-            "--client", "codex", "--scope", "project", "--version", VERSION,
-            "--asset-dir", str(self.assets),
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unsafe path", result.stderr)
-        self.assertFalse((self.project / ".agents").exists())
-        self.assertFalse((self.tempfiles / "escaped.txt").exists())
+        self._exercise_adversarial_archive("posix", excessive_entries=False)
 
     def test_posix_rejects_excessive_archive_entry_count(self) -> None:
-        archive_path = self.assets / f"deep-review-{VERSION}.tar.gz"
-        with tarfile.open(archive_path, "w:gz") as archive:
-            for index in range(10001):
-                archive.addfile(tarfile.TarInfo(f"deep-review/entry-{index}"))
-        self._write_checksum(archive_path)
-
-        result = self._run_posix(
-            "--client", "codex", "--scope", "project", "--version", VERSION,
-            "--asset-dir", str(self.assets),
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("10000-entry safety limit", result.stderr)
-        self.assertFalse((self.project / ".agents").exists())
+        self._exercise_adversarial_archive("posix", excessive_entries=True)
 
     def test_posix_rejects_excessive_expanded_size(self) -> None:
         large_file = self.root / "oversized sparse file"
@@ -521,14 +576,7 @@ cp \"$FAKE_ASSETS/${url##*/}\" \"$output\"
         self.assertFalse((self.project / ".agents").exists())
 
     def test_posix_stops_for_nondeterministic_client_without_mutation(self) -> None:
-        result = self._run_posix(
-            "--client", "t3", "--scope", "project", "--version", VERSION,
-            "--asset-dir", str(self.assets),
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("no deterministic local destination", result.stderr)
-        self.assertFalse((self.project / ".agents").exists())
+        self._exercise_unsupported_client("posix")
         self.assertEqual(list(self.tempfiles.iterdir()), [])
 
     def test_posix_claude_code_reports_native_skill_command(self) -> None:
@@ -664,119 +712,31 @@ cp \"$FAKE_ASSETS/${url##*/}\" \"$output\"
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_powershell_update_replaces_complete_destination(self) -> None:
-        destination = self.project / ".agents" / "skills" / "deep-review"
-        destination.mkdir(parents=True)
-        marker = destination / "existing.txt"
-        marker.write_text("replace", encoding="utf-8")
-
-        result = self._run_powershell(
-            "-Client", "codex", "-Scope", "Project", "-Version", VERSION,
-            "-AssetDirectory", str(self.assets), "-Update",
-        )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(marker.exists())
-        self.assertTrue((destination / "SKILL.md").is_file())
-        self.assertEqual(list(destination.parent.glob(".deep-review.backup.*")), [])
-        self.assertFalse((destination.parent / ".deep-review.install.lock").exists())
+        self._exercise_update_replacement("powershell")
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_powershell_backup_cleanup_failure_keeps_successful_install(self) -> None:
-        destination = self.project / ".agents" / "skills" / "deep-review"
-        destination.mkdir(parents=True)
-        (destination / "existing.txt").write_text("previous", encoding="utf-8")
-
-        result = self._run_powershell_with_failed_backup_cleanup(
-            "-Client", "codex", "-Scope", "Project", "-Version", VERSION,
-            "-AssetDirectory", str(self.assets), "-Update",
-        )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((destination / "SKILL.md").is_file())
-        self.assertFalse((destination / ".deep-review-installing").exists())
-        backups = list(destination.parent.glob(".deep-review.backup.*"))
-        self.assertEqual(len(backups), 1)
-        self.assertEqual((backups[0] / "deep-review" / "existing.txt").read_text(), "previous")
-        self.assertIn("installed successfully", (result.stdout + result.stderr).lower())
+        self._exercise_backup_cleanup_failure("powershell")
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_powershell_failed_activation_restores_existing_destination(self) -> None:
-        destination = self.project / ".agents" / "skills" / "deep-review"
-        destination.mkdir(parents=True)
-        marker = destination / "existing.txt"
-        marker.write_text("keep", encoding="utf-8")
-
-        result = self._run_powershell_with_failed_activation(
-            "-Client", "codex", "-Scope", "Project", "-Version", VERSION,
-            "-AssetDirectory", str(self.assets), "-Update",
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("injected activation failure", result.stderr)
-        self.assertEqual(marker.read_text(encoding="utf-8"), "keep")
-        self.assertEqual(list(destination.parent.glob(".deep-review.backup.*")), [])
-        self.assertFalse((destination.parent / ".deep-review.install.lock").exists())
+        self._exercise_failed_activation("powershell")
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_powershell_does_not_remove_another_installers_lock(self) -> None:
-        parent = self.project / ".agents" / "skills"
-        lock = parent / ".deep-review.install.lock"
-        lock.mkdir(parents=True)
-        owner = lock / "owner"
-        owner.write_text("another installer", encoding="utf-8")
-
-        result = self._run_powershell(
-            "-Client", "codex", "-Scope", "Project", "-Version", VERSION,
-            "-AssetDirectory", str(self.assets),
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Another installation is active", result.stderr)
-        self.assertEqual(owner.read_text(encoding="utf-8"), "another installer")
+        self._exercise_foreign_lock("powershell")
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_powershell_stops_for_nondeterministic_client_without_mutation(self) -> None:
-        result = self._run_powershell(
-            "-Client", "t3", "-Scope", "Project", "-Version", VERSION,
-            "-AssetDirectory", str(self.assets),
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("no deterministic local destination", result.stderr)
-        self.assertFalse((self.project / ".agents").exists())
+        self._exercise_unsupported_client("powershell")
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_powershell_rejects_archive_path_traversal_before_extraction(self) -> None:
-        archive_path = self.assets / f"deep-review-{VERSION}.zip"
-        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr("deep-review/../../escaped.txt", "escaped")
-        self._write_checksum(archive_path)
-
-        result = self._run_powershell(
-            "-Client", "codex", "-Scope", "Project", "-Version", VERSION,
-            "-AssetDirectory", str(self.assets),
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unsafe path", result.stderr)
-        self.assertFalse((self.project / ".agents").exists())
-        self.assertFalse((self.tempfiles / "escaped.txt").exists())
+        self._exercise_adversarial_archive("powershell", excessive_entries=False)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_powershell_rejects_excessive_archive_entry_count(self) -> None:
-        archive_path = self.assets / f"deep-review-{VERSION}.zip"
-        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-            for index in range(10001):
-                archive.writestr(f"deep-review/entry-{index}", "")
-        self._write_checksum(archive_path)
-
-        result = self._run_powershell(
-            "-Client", "codex", "-Scope", "Project", "-Version", VERSION,
-            "-AssetDirectory", str(self.assets),
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("10000-entry safety limit", result.stderr)
-        self.assertFalse((self.project / ".agents").exists())
+        self._exercise_adversarial_archive("powershell", excessive_entries=True)
 
 
 class ReleasePublisherTests(unittest.TestCase):
