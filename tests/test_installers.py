@@ -344,6 +344,22 @@ exec /bin/mv "$@"
         self.assertIn("ancestor", result.stderr.lower())
         self.assertEqual(marker.read_text(encoding="utf-8"), "preserve")
 
+    def _exercise_linked_destination(self, platform: str) -> None:
+        target = self.root / "existing target"
+        target.mkdir()
+        marker = target / "existing.txt"
+        marker.write_text("keep", encoding="utf-8")
+        destination = self.project / ".agents" / "skills" / "deep-review"
+        destination.parent.mkdir(parents=True)
+        destination.symlink_to(target, target_is_directory=True)
+
+        result = self._run_installer(platform, update=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symbolic link" if platform == "posix" else "reparse point", result.stderr)
+        self.assertTrue(destination.is_symlink())
+        self.assertEqual(marker.read_text(encoding="utf-8"), "keep")
+
     def _exercise_adversarial_archive(self, platform: str, *, excessive_entries: bool) -> None:
         self._write_adversarial_archive(platform, excessive_entries=excessive_entries)
         result = self._run_installer(platform)
@@ -424,23 +440,7 @@ exec /bin/mv "$@"
 
     @unittest.skipUnless(hasattr(os, "symlink"), "symbolic links are unavailable")
     def test_posix_update_refuses_symbolic_link_destination(self) -> None:
-        target = self.root / "existing target"
-        target.mkdir()
-        marker = target / "existing.txt"
-        marker.write_text("keep", encoding="utf-8")
-        destination = self.project / ".agents" / "skills" / "deep-review"
-        destination.parent.mkdir(parents=True)
-        destination.symlink_to(target, target_is_directory=True)
-
-        result = self._run_posix(
-            "--client", "codex", "--scope", "project", "--version", VERSION,
-            "--asset-dir", str(self.assets), "--update",
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("symbolic link", result.stderr)
-        self.assertTrue(destination.is_symlink())
-        self.assertEqual(marker.read_text(encoding="utf-8"), "keep")
+        self._exercise_linked_destination("posix")
 
     @unittest.skipUnless(hasattr(os, "symlink"), "symbolic links are unavailable")
     def test_posix_update_refuses_symbolic_link_ancestor(self) -> None:
@@ -744,6 +744,13 @@ cp \"$FAKE_ASSETS/${url##*/}\" \"$output\"
     )
     def test_powershell_update_refuses_symbolic_link_ancestor(self) -> None:
         self._exercise_linked_destination_ancestor("powershell")
+
+    @unittest.skipUnless(
+        shutil.which("pwsh") and hasattr(os, "symlink"),
+        "PowerShell or symbolic links are unavailable",
+    )
+    def test_powershell_update_refuses_symbolic_link_destination(self) -> None:
+        self._exercise_linked_destination("powershell")
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_powershell_stops_for_nondeterministic_client_without_mutation(self) -> None:

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -197,7 +196,7 @@ class GitLabClient:
             "GET", package_path, allow_not_found=True, max_response_bytes=len(local) + 1
         )
         if status == 200:
-            if hashlib.sha256(remote).digest() != hashlib.sha256(local).digest():
+            if remote != local:
                 raise PublishError(
                     f"durable asset {path.name} already exists with different content; "
                     "release assets are immutable"
