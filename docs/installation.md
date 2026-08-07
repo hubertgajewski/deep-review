@@ -1,33 +1,17 @@
 # Installation
 
-Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep-review/`. The verified release installers put that complete package in the standard skill directory for your client and scope. Publication in the Claude community marketplace is planned; until that listing is available, use a release installer below.
+Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep-review/`. Install that complete directory under a skill-discovery location supported by your AI client. Publication in the Claude community marketplace is planned; until that listing is available, use the pinned manual installation below.
 
 ## Requirements
 
-- **Linux and macOS installation needs** `curl`, `tar`, and either `sha256sum` or `shasum`.
-- **Windows installation needs** PowerShell 7 or newer.
-- **Git is required at runtime** to resolve review scopes, but not to run a release installer.
+- **Git is required** to install Deep Review and resolve review scopes.
 - **Python 3 is optional.** It enables the bundled deterministic cache and result-processing helpers; Deep Review can still review without persistent reuse when those helpers are unavailable.
 - **Remote review needs the provider CLI.** Authenticate `gh` for `--github-pr` or `glab` for `--gitlab-mr` before invoking the skill.
 - **The AI client must support Agent Skills** and the filesystem guarantees described under [Runtime host requirements](#runtime-host-requirements).
 
-## Install a verified release
-
-1. In the Deep Review project on GitLab, choose **Deploy > Releases** in the sidebar.
-2. Open the version you want to install.
-3. Copy and run the **Linux and macOS** or **Windows PowerShell** block shown there.
-
-That block downloads the correct installer and checksum, verifies them, and installs the same release version. It defaults to Codex at user scope and shows the small change needed for another [client or scope](#installer-destinations). Do not pipe a downloaded installer directly into a shell.
-
-If GitLab says there are no releases, there is no verified installer to download yet. Use the [pinned-commit instructions](#advanced-install-a-pinned-commit) until a release is published. This guide deliberately contains no release or asset URL before that destination exists.
-
-The installer downloads the package for exactly that version into a private temporary directory, verifies its SHA-256 checksum, validates the complete package layout, and only then activates it. It prints the installed version, destination, verification result, and first review command. A failed download, checksum, extraction, or validation leaves the destination unchanged and removes temporary files.
-
-An existing installation is never replaced implicitly. Inspect the new release, then add `--update` on Linux or macOS, or `-Update` in PowerShell, to replace the complete directory transactionally.
-
 ## Choose where to install
 
-Choose the installer scope based on who should discover the skill:
+Choose one location before copying the package:
 
 | Scope | Use it when | Trust requirement |
 | --- | --- | --- |
@@ -45,26 +29,27 @@ The final layout must be:
 
 Do not flatten the package or copy only `SKILL.md`.
 
-### Installer destinations
+### Find your client directory
 
-The installer maps these client IDs and never asks for a raw destination:
+The shared project location `.agents/skills` works with Amp, Codex, Cursor, Devin, Gemini CLI, GitHub Copilot, Google Antigravity, Goose, OpenCode, OpenHands, Warp, and Windsurf. Several of these clients also support a vendor-specific location; consult the [client reference](#client-reference) when shared discovery is unavailable or organizational policy requires a native directory.
 
-| Installer client ID | Clients | Project root | User root |
-| --- | --- | --- | --- |
-| `amp`, `codex`, `cursor`, `devin`, `gemini`, `github-copilot`, `antigravity`, `goose`, `opencode`, `openhands`, `warp`, `windsurf` | Shared Agent Skills convention | `.agents/skills` | `~/.agents/skills` |
-| `claude-code` | Claude Code | `.claude/skills` | `~/.claude/skills` |
-| `cline` | Cline | `.cline/skills` | `~/.cline/skills` |
-| `grok` | Grok Build CLI | `.grok/skills` | `~/.grok/skills` |
-| `junie` | JetBrains Junie | `.junie/skills` | `~/.junie/skills` |
-| `kiro` | Kiro | `.kiro/skills` | `~/.kiro/skills` |
-| `mistral` | Mistral Vibe Code | `.vibe/skills` | `~/.vibe/skills` |
-| `qwen` | Qwen Code | `.qwen/skills` | `~/.qwen/skills` |
+Common native locations are:
 
-T3 Code uses the skill location of its active provider, so `--client t3` stops without changing the filesystem and points to the manual guidance below. Claude chat and Cowork use ZIP upload rather than a local discovery directory; `claude-chat` and `claude-cowork` stop the same way. The installer also rejects unknown client IDs instead of guessing.
+| Client | Project | User |
+| --- | --- | --- |
+| Claude Code | `.claude/skills` | `~/.claude/skills` |
+| Cline | `.cline/skills` | `~/.cline/skills` |
+| Grok Build CLI | `.grok/skills` | `~/.grok/skills` |
+| JetBrains Junie | `.junie/skills` | `~/.junie/skills` |
+| Kiro | `.kiro/skills` | `~/.kiro/skills` |
+| Mistral Vibe Code | `.vibe/skills` | `~/.vibe/skills` |
+| Qwen Code | `.qwen/skills` | `~/.qwen/skills` |
 
-## Advanced: install a pinned commit
+T3 Code uses the skill location of its active provider. Claude chat and Cowork use ZIP upload rather than a local discovery directory.
 
-Use this process when you need a commit that has not been released. Select the exact lowercase, 40-character upstream commit SHA that you reviewed and choose the destination yourself. The examples intentionally refuse to overwrite an existing destination.
+## Install a pinned copy
+
+Select the exact lowercase, 40-character upstream commit SHA that you reviewed. The examples intentionally refuse to overwrite an existing destination.
 
 ### Linux and macOS
 
@@ -212,9 +197,7 @@ Local and path reviews require a secure-open adapter that anchors mutable reads 
 
 ## Updating
 
-Deep Review has no automatic updater. For a release installation, review the target release and rerun the same installer with its version plus `--update` or `-Update`. The installer verifies and stages the replacement before changing the current directory.
-
-To update an advanced pinned-commit installation manually:
+Deep Review has no automatic updater. To update a vendored or user copy:
 
 1. Select and review an exact upstream commit SHA, or verify a signed tag and record its commit.
 2. Compare `skills/deep-review/` with the installed copy.

@@ -144,8 +144,7 @@ class PackageTests(unittest.TestCase):
         ):
             self.assertIn(token, pipeline)
 
-    def test_verified_release_installation_contract(self) -> None:
-        installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+    def test_verified_release_infrastructure_contract(self) -> None:
         maintainers = (ROOT / "docs" / "maintainers.md").read_text(encoding="utf-8")
         pipeline = (ROOT / ".gitlab-ci.yml").read_text(encoding="utf-8")
         manifest = json.loads(
@@ -161,19 +160,6 @@ class PackageTests(unittest.TestCase):
             self.assertTrue(path.is_file(), path)
         self.assertEqual(manifest["version"], "1.1.0")
         self.assertIn("## [1.1.0] - 2026-08-07", (SKILL / "CHANGELOG.md").read_text(encoding="utf-8"))
-        self.assertIn("**Deploy > Releases**", installation)
-        self.assertIn("there is no verified installer to download yet", installation)
-        self.assertIn("contains no release or asset URL", installation)
-        self.assertNotIn("/-/releases", installation)
-        self.assertLess(
-            installation.index("## Install a verified release"),
-            installation.index("## Advanced: install a pinned commit"),
-        )
-        for token in ("--update", "-Update", "--client t3"):
-            self.assertIn(token, installation)
-        self.assertNotIn("curl | sh", installation)
-        self.assertNotIn("Invoke-Expression", installation)
-
         for token in (
             "installer_powershell_test:",
             "publish_release:",
@@ -1330,14 +1316,7 @@ class PackageTests(unittest.TestCase):
         for status in ("`ready`", "`blocked`", "`incomplete`"):
             self.assertIn(status, readme)
         self.assertIn("## Requirements", installation)
-        self.assertLess(
-            installation.index("## Requirements"),
-            installation.index("## Install a verified release"),
-        )
-        self.assertLess(
-            installation.index("## Install a verified release"),
-            installation.index("## Advanced: install a pinned commit"),
-        )
+        self.assertLess(installation.index("## Requirements"), installation.index("## Install a pinned copy"))
         self.assertIn("../README.md#quick-start", installation)
         self.assertIn("Disable automatic pipelines", maintainers)
         self.assertIn("user-facing installation", agents)
