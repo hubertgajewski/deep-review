@@ -315,14 +315,4 @@ Never automatically pull an unreviewed default branch into a trusted skill direc
 
 ## Offline installation
 
-Download the versioned archive and checksum from the same GitLab Release on a connected machine and move both files to one local directory. Then run the installer with that directory:
-
-```bash
-sh ./deep-review-install.sh --asset-dir /path/to/assets
-```
-
-```powershell
-.\deep-review-install.ps1 -AssetDirectory C:\path\to\assets
-```
-
-Offline mode still verifies the archive checksum and package version before changing the destination.
+Follow [Manual download](#manual-download). It lists all four files to transfer, verifies the installer, and runs it with the downloaded package. The installer verifies the package checksum and version before changing the destination.
