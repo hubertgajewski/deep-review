@@ -275,14 +275,30 @@ Local and path reviews require a secure-open adapter that anchors mutable reads 
 
 ## Updating
 
-Download and verify the new release installer and checksum using the installation steps above, then add the update option:
+Use the complete block for your operating system so the freshly downloaded and verified installer receives the update option before its private temporary copy is removed.
+
+### Linux update
 
 ```bash
-sh ./deep-review-install.sh --update
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && sha256sum -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" --update )
 ```
 
+### macOS update
+
+```bash
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && shasum -a 256 -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" --update )
+```
+
+### Windows PowerShell update
+
 ```powershell
-.\deep-review-install.ps1 -Update
+& { $ErrorActionPreference = "Stop"; $installDir = Join-Path ([System.IO.Path]::GetTempPath()) ("deep-review-install-" + [guid]::NewGuid()); New-Item -ItemType Directory -Path $installDir | Out-Null; try { Invoke-WebRequest https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.ps1 -OutFile (Join-Path $installDir "deep-review-install.ps1"); Invoke-WebRequest https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.ps1.sha256 -OutFile (Join-Path $installDir "deep-review-install.ps1.sha256")
+$expected = ((Get-Content (Join-Path $installDir "deep-review-install.ps1.sha256") -TotalCount 1) -split '\s+')[0]; if ((Get-FileHash (Join-Path $installDir "deep-review-install.ps1") -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "Installer checksum verification failed" }
+& (Join-Path $installDir "deep-review-install.ps1") -Update } finally { Remove-Item -Recurse -Force -LiteralPath $installDir -ErrorAction SilentlyContinue } }
 ```
 
 The installer verifies and stages the complete new package before changing the destination. If activation fails, it restores the previous installation. It never merges old and new package files.

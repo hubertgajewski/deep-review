@@ -222,7 +222,7 @@ class GitLabClient:
         _, release = self.json_request("GET", release_path, allow_not_found=True)
         description = self._release_description(tag, project_url)
         if release is None:
-            links = [self._link_payload(tag, path, url) for path, url in assets]
+            links = [self._link_payload(path, url) for path, url in assets]
             _, created = self.json_request(
                 "POST",
                 f"/projects/{self.project}/releases",
@@ -250,7 +250,7 @@ class GitLabClient:
         }
         links_path = f"{release_path}/assets/links"
         for path, url in assets:
-            payload = self._link_payload(tag, path, url)
+            payload = self._link_payload(path, url)
             current = by_name.get(path.name)
             if current is None:
                 self.json_request("POST", links_path, payload=payload)
@@ -267,7 +267,7 @@ class GitLabClient:
         )
 
     @staticmethod
-    def _link_payload(tag: str, path: Path, url: str) -> dict[str, str]:
+    def _link_payload(path: Path, url: str) -> dict[str, str]:
         return {
             "name": path.name,
             "url": url,

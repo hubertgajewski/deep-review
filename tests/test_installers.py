@@ -1271,17 +1271,54 @@ class ReleasePublisherTests(unittest.TestCase):
             root = Path(temporary)
             fake_bin = root / "bin"
             fake_bin.mkdir()
-            fake_curl = fake_bin / "curl"
-            fake_curl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            fake_curl.chmod(0o755)
-            marker = root / "installer-ran"
-            installer = root / "deep-review-install.sh"
-            installer.write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
-            (root / "deep-review-install.sh.sha256").write_text(
+            downloaded_installer = root / "downloaded-installer.sh"
+            downloaded_installer.write_text(
+                '#!/bin/sh\ntouch "$INSTALLER_MARKER"\n', encoding="utf-8"
+            )
+            downloaded_checksum = root / "downloaded-installer.sh.sha256"
+            downloaded_checksum.write_text(
                 f"{'0' * 64}  deep-review-install.sh\n", encoding="ascii"
             )
+            fake_curl = fake_bin / "curl"
+            fake_curl.write_text(
+                """#!/bin/sh
+output=
+while [ "$#" -gt 0 ]; do
+    case $1 in
+        --output)
+            [ "$#" -ge 2 ] || exit 2
+            output=$2
+            shift 2
+            ;;
+        http*)
+            [ -n "$output" ] || exit 2
+            case $1 in
+                *.sha256) cp "$FAKE_CHECKSUM" "$output" ;;
+                *) cp "$FAKE_INSTALLER" "$output" ;;
+            esac
+            output=
+            shift
+            ;;
+        *) shift ;;
+    esac
+done
+""",
+                encoding="utf-8",
+            )
+            fake_curl.chmod(0o755)
+            marker = root / "installer-ran"
+            temporary_root = root / "temporary"
+            temporary_root.mkdir()
             environment = os.environ.copy()
-            environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+            environment.update(
+                {
+                    "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+                    "TMPDIR": str(temporary_root),
+                    "FAKE_INSTALLER": str(downloaded_installer),
+                    "FAKE_CHECKSUM": str(downloaded_checksum),
+                    "INSTALLER_MARKER": str(marker),
+                }
+            )
 
             result = subprocess.run(
                 ["sh", "-c", block],
@@ -1293,7 +1330,54 @@ class ReleasePublisherTests(unittest.TestCase):
             )
 
             self.assertNotEqual(result.returncode, 0)
+            self.assertIn("FAILED", result.stdout)
             self.assertFalse(marker.exists())
+            self.assertEqual(list(temporary_root.iterdir()), [])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
+    def test_release_powershell_block_does_not_run_after_checksum_failure(self) -> None:
+        description = self.client._release_description(
+            VERSION, "https://gitlab.com/group/project"
+        )
+        block = description.split("```powershell\n", 1)[1].split("\n```", 1)[0]
+        with tempfile.TemporaryDirectory(prefix="release checksum block ") as temporary:
+            root = Path(temporary)
+            marker = root / "installer-ran"
+            temporary_root = root / "temporary"
+            temporary_root.mkdir()
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "TMPDIR": str(temporary_root),
+                    "INSTALLER_MARKER": str(marker),
+                }
+            )
+            injected_downloads = r"""
+function Invoke-WebRequest {
+    [CmdletBinding()]
+    param([string] $Uri, [string] $OutFile)
+    if ($Uri -like '*.sha256') {
+        Set-Content -LiteralPath $OutFile -Value (('0' * 64) + '  deep-review-install.ps1')
+    }
+    else {
+        Set-Content -LiteralPath $OutFile -Value 'Set-Content -LiteralPath $env:INSTALLER_MARKER -Value ran'
+    }
+}
+"""
+
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", injected_downloads + block],
+                cwd=root,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("checksum verification failed", result.stderr.lower())
+            self.assertFalse(marker.exists())
+            self.assertEqual(list(temporary_root.iterdir()), [])
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_release_powershell_block_fails_closed_in_private_temporary_directory(self) -> None:

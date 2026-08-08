@@ -140,6 +140,8 @@ class PackageTests(unittest.TestCase):
             "git merge-base --is-ancestor \"$CI_COMMIT_SHA\" origin/main",
             "claude plugin validate --strict skills/deep-review",
             "git archive --format=tar.gz --prefix=deep-review/",
+            "version=$CI_COMMIT_TAG",
+            '[string] \\$Version = \\"$CI_COMMIT_TAG\\",',
             "deep-review-$CI_COMMIT_TAG.tar.gz.sha256",
         ):
             self.assertIn(token, pipeline)
@@ -1324,8 +1326,8 @@ class PackageTests(unittest.TestCase):
         )
         self.assertIn("## Install from a release", installation)
         self.assertIn("deep-review-install.sh.sha256", installation)
-        self.assertIn("sh ./deep-review-install.sh --update", installation)
-        self.assertIn(".\\deep-review-install.ps1 -Update", installation)
+        self.assertIn('sh "$install_dir/deep-review-install.sh" --update', installation)
+        self.assertIn('& (Join-Path $installDir "deep-review-install.ps1") -Update', installation)
         self.assertIn("## Offline installation", installation)
         self.assertIn("../README.md#quick-start", installation)
         self.assertIn("Disable automatic pipelines", maintainers)
