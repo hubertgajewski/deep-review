@@ -143,7 +143,10 @@ class InstallerTests(unittest.TestCase):
         )
 
     def _run_interactive(
-        self, command: list[str], interactions: list[tuple[str, str]]
+        self,
+        command: list[str],
+        interactions: list[tuple[str, str]],
+        environment: dict[str, str] | None = None,
     ) -> tuple[int, str]:
         if pty is None:
             self.skipTest("pseudo-terminals are unavailable")
@@ -152,7 +155,7 @@ class InstallerTests(unittest.TestCase):
             process = subprocess.Popen(
                 command,
                 cwd=self.project,
-                env=self._environment(),
+                env=environment or self._environment(),
                 stdin=slave,
                 stdout=slave,
                 stderr=slave,
@@ -699,10 +702,20 @@ exec /bin/mv "$@"
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
     def test_powershell_guided_eof_changes_nothing(self) -> None:
+        wrapper = self.root / "read host eof.ps1"
+        wrapper.write_text(
+            """function global:Read-Host { return $null }
+& $env:DEEP_REVIEW_INSTALLER_PATH @args
+""",
+            encoding="utf-8",
+        )
         status, output = self._run_interactive(
-            ["pwsh", "-NoProfile", "-File", str(POWERSHELL_INSTALLER),
+            ["pwsh", "-NoProfile", "-File", str(wrapper),
              "-AssetDirectory", str(self.assets)],
-            [("Client ID:", "\x04")],
+            [],
+            environment=self._environment(
+                DEEP_REVIEW_INSTALLER_PATH=str(POWERSHELL_INSTALLER)
+            ),
         )
 
         self.assertNotEqual(status, 0)
