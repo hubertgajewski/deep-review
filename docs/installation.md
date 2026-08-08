@@ -315,4 +315,4 @@ Never automatically pull an unreviewed default branch into a trusted skill direc
 
 ## Offline installation
 
-Follow [Manual download](#manual-download). It lists all four files to transfer, verifies the installer, and runs it with the downloaded package. The installer verifies the package checksum and version before changing the destination.
+Follow [Manual download](#manual-download). It lists all four files to transfer, verifies the installer, and runs it with the downloaded package. The installer verifies the package checksum and version before changing the destination. For an update, add `--update` on Linux or macOS, or `-Update` on Windows.
