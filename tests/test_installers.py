@@ -1183,8 +1183,8 @@ class ReleasePublisherTests(unittest.TestCase):
         self.assertIn("--fail-early", description)
         self.assertIn("--proto '=https'", description)
         self.assertIn("-split '\\s+'", description)
-        self.assertIn("sh ./deep-review-install.sh", description)
-        self.assertIn("./deep-review-install.ps1", description)
+        self.assertIn('sh "$install_dir/deep-review-install.sh"', description)
+        self.assertIn('& (Join-Path $installDir "deep-review-install.ps1")', description)
         self.assertNotIn("codex", description.lower())
 
     def test_primary_documentation_matches_three_step_release_commands(self) -> None:
@@ -1205,8 +1205,23 @@ class ReleasePublisherTests(unittest.TestCase):
             for block in release_blocks:
                 self.assertEqual(len(block.splitlines()), 3)
 
-        for internal_detail in ("mktemp", "trap ", "installDirectory", "TemporaryRoot"):
-            self.assertNotIn(internal_detail, primary)
+        self.assertIn('install_dir="$(mktemp -d)"', primary)
+        self.assertIn("trap 'rm -rf", primary)
+        self.assertIn("[System.IO.Path]::GetTempPath()", primary)
+        self.assertNotIn("TemporaryRoot", primary)
+
+        manual = installation.split("### Manual download", 1)[1].split(
+            "## Choose where to install", 1
+        )[0]
+        for asset in (
+            "deep-review-install.sh.sha256",
+            f"deep-review-{VERSION}.tar.gz.sha256",
+            "deep-review-install.ps1.sha256",
+            f"deep-review-{VERSION}.zip.sha256",
+        ):
+            self.assertIn(asset, manual)
+        self.assertIn("--asset-dir /path/to/downloads", manual)
+        self.assertIn("-AssetDirectory $assets", manual)
 
     def test_release_posix_block_fails_closed_in_private_temporary_directory(self) -> None:
         description = self.client._release_description(

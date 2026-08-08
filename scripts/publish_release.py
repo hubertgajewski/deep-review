@@ -287,17 +287,17 @@ Paste the three commands for your operating system. The installer asks which AI 
 ### Linux
 
 ```bash
-curl --fail --fail-early --location --proto '=https' --tlsv1.2 --remote-name {release}/deep-review-install.sh --remote-name {release}/deep-review-install.sh.sha256 &&
-sha256sum -c deep-review-install.sh.sha256 &&
-sh ./deep-review-install.sh
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" {release}/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" {release}/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && sha256sum -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" )
 ```
 
 ### macOS
 
 ```bash
-curl --fail --fail-early --location --proto '=https' --tlsv1.2 --remote-name {release}/deep-review-install.sh --remote-name {release}/deep-review-install.sh.sha256 &&
-shasum -a 256 -c deep-review-install.sh.sha256 &&
-sh ./deep-review-install.sh
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" {release}/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" {release}/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && shasum -a 256 -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" )
 ```
 
 The checksum command must print `deep-review-install.sh: OK` before the installer runs.
@@ -305,9 +305,9 @@ The checksum command must print `deep-review-install.sh: OK` before the installe
 ### Windows PowerShell
 
 ```powershell
-& {{ $ErrorActionPreference = "Stop"; Invoke-WebRequest {release}/deep-review-install.ps1 -OutFile deep-review-install.ps1; Invoke-WebRequest {release}/deep-review-install.ps1.sha256 -OutFile deep-review-install.ps1.sha256
-$expected = ((Get-Content ./deep-review-install.ps1.sha256 -TotalCount 1) -split '\\s+')[0]; if ((Get-FileHash ./deep-review-install.ps1 -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) {{ throw "Installer checksum verification failed" }}
-./deep-review-install.ps1 }}
+& {{ $ErrorActionPreference = "Stop"; $installDir = Join-Path ([System.IO.Path]::GetTempPath()) ("deep-review-install-" + [guid]::NewGuid()); New-Item -ItemType Directory -Path $installDir | Out-Null; try {{ Invoke-WebRequest {release}/deep-review-install.ps1 -OutFile (Join-Path $installDir "deep-review-install.ps1"); Invoke-WebRequest {release}/deep-review-install.ps1.sha256 -OutFile (Join-Path $installDir "deep-review-install.ps1.sha256")
+$expected = ((Get-Content (Join-Path $installDir "deep-review-install.ps1.sha256") -TotalCount 1) -split '\\s+')[0]; if ((Get-FileHash (Join-Path $installDir "deep-review-install.ps1") -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) {{ throw "Installer checksum verification failed" }}
+& (Join-Path $installDir "deep-review-install.ps1") }} finally {{ Remove-Item -Recurse -Force -LiteralPath $installDir -ErrorAction SilentlyContinue }} }}
 ```
 
 PowerShell stops before installation if a download fails or the checksum does not match. See the [installation guide]({project_url}/-/blob/{tag}/docs/installation.md) for automation, updates, and offline installation.

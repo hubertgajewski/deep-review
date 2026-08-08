@@ -18,17 +18,17 @@ Paste the three commands for your operating system. The installer asks which AI 
 ### Linux
 
 ```bash
-curl --fail --fail-early --location --proto '=https' --tlsv1.2 --remote-name https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh --remote-name https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh.sha256 &&
-sha256sum -c deep-review-install.sh.sha256 &&
-sh ./deep-review-install.sh
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && sha256sum -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" )
 ```
 
 ### macOS
 
 ```bash
-curl --fail --fail-early --location --proto '=https' --tlsv1.2 --remote-name https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh --remote-name https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh.sha256 &&
-shasum -a 256 -c deep-review-install.sh.sha256 &&
-sh ./deep-review-install.sh
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && shasum -a 256 -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" )
 ```
 
 The second command must print `deep-review-install.sh: OK`. Because the commands are joined with `&&`, a failed download or checksum prevents the installer from running.
@@ -36,9 +36,9 @@ The second command must print `deep-review-install.sh: OK`. Because the commands
 ### Windows PowerShell
 
 ```powershell
-& { $ErrorActionPreference = "Stop"; Invoke-WebRequest https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.ps1 -OutFile deep-review-install.ps1; Invoke-WebRequest https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.ps1.sha256 -OutFile deep-review-install.ps1.sha256
-$expected = ((Get-Content ./deep-review-install.ps1.sha256 -TotalCount 1) -split '\s+')[0]; if ((Get-FileHash ./deep-review-install.ps1 -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "Installer checksum verification failed" }
-./deep-review-install.ps1 }
+& { $ErrorActionPreference = "Stop"; $installDir = Join-Path ([System.IO.Path]::GetTempPath()) ("deep-review-install-" + [guid]::NewGuid()); New-Item -ItemType Directory -Path $installDir | Out-Null; try { Invoke-WebRequest https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.ps1 -OutFile (Join-Path $installDir "deep-review-install.ps1"); Invoke-WebRequest https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.ps1.sha256 -OutFile (Join-Path $installDir "deep-review-install.ps1.sha256")
+$expected = ((Get-Content (Join-Path $installDir "deep-review-install.ps1.sha256") -TotalCount 1) -split '\s+')[0]; if ((Get-FileHash (Join-Path $installDir "deep-review-install.ps1") -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "Installer checksum verification failed" }
+& (Join-Path $installDir "deep-review-install.ps1") } finally { Remove-Item -Recurse -Force -LiteralPath $installDir -ErrorAction SilentlyContinue } }
 ```
 
 PowerShell stops if either download or the checksum check fails. On every platform, the installer reports the installed version, destination, checksum, and first review command.
@@ -65,7 +65,27 @@ sh ./deep-review-install.sh --client claude-code --scope project
 
 ### Manual download
 
-If command-line downloads are unavailable, open the [`v1.1.1` Release](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1), save the installer and its `.sha256` file for your operating system in the same directory, then run the verification and installer commands shown above. Do not run the installer unless verification reports `OK` or the calculated hash matches.
+If command-line downloads are unavailable, open the [`v1.1.1` Release](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1) and save all four files for your operating system in one directory:
+
+- Linux and macOS: `deep-review-install.sh`, `deep-review-install.sh.sha256`, `deep-review-v1.1.1.tar.gz`, and `deep-review-v1.1.1.tar.gz.sha256`.
+- Windows: `deep-review-install.ps1`, `deep-review-install.ps1.sha256`, `deep-review-v1.1.1.zip`, and `deep-review-v1.1.1.zip.sha256`.
+
+Return to the user home or project directory where installation should be resolved, then verify and run the downloaded files. On Linux use:
+
+```bash
+(cd /path/to/downloads && sha256sum -c deep-review-install.sh.sha256) &&
+sh /path/to/downloads/deep-review-install.sh --asset-dir /path/to/downloads
+```
+
+On macOS, replace `sha256sum -c` with `shasum -a 256 -c`. On Windows PowerShell use:
+
+```powershell
+$assets = "C:\path\to\downloads"; $installer = Join-Path $assets "deep-review-install.ps1"; $expected = ((Get-Content (Join-Path $assets "deep-review-install.ps1.sha256") -TotalCount 1) -split '\s+')[0]
+if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "Installer checksum verification failed" }
+& $installer -AssetDirectory $assets
+```
+
+The installer verifies the package checksum again before changing the destination. Do not run either installer unless its own checksum verification succeeds.
 
 ## Choose where to install
 
