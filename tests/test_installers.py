@@ -654,6 +654,62 @@ exec /bin/mv "$@"
         self.assertIn(f"Destination: {destination.resolve()}", output)
         self.assertTrue((destination / "SKILL.md").is_file())
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
+    def test_powershell_guided_cancellation_changes_nothing(self) -> None:
+        status, output = self._run_interactive(
+            ["pwsh", "-NoProfile", "-File", str(POWERSHELL_INSTALLER),
+             "-AssetDirectory", str(self.assets)],
+            [
+                ("Client ID:", "codex\n"),
+                ("[user/project]:", "project\n"),
+                ("[y/N]:", "n\n"),
+            ],
+        )
+
+        self.assertNotEqual(status, 0)
+        self.assertIn("Installation cancelled", output)
+        self.assertFalse((self.project / ".agents").exists())
+        self.assertEqual(list(self.tempfiles.iterdir()), [])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
+    def test_powershell_guided_invalid_attempts_change_nothing(self) -> None:
+        command = [
+            "pwsh", "-NoProfile", "-File", str(POWERSHELL_INSTALLER),
+            "-AssetDirectory", str(self.assets),
+        ]
+        cases = (
+            (
+                [("Client ID:", "unknown\n"), ("Client ID:", "t3\n"),
+                 ("Client ID:", "not-a-client\n")],
+                "No supported client was selected after 3 attempts",
+            ),
+            (
+                [("Client ID:", "codex\n"), ("[user/project]:", "wrong\n"),
+                 ("[user/project]:", "still-wrong\n"), ("[user/project]:", "nope\n")],
+                "No valid scope was selected after 3 attempts",
+            ),
+        )
+        for interactions, message in cases:
+            with self.subTest(message=message):
+                status, output = self._run_interactive(command, interactions)
+                self.assertNotEqual(status, 0)
+                self.assertIn(message, output)
+                self.assertFalse((self.project / ".agents").exists())
+                self.assertEqual(list(self.tempfiles.iterdir()), [])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is not installed")
+    def test_powershell_guided_eof_changes_nothing(self) -> None:
+        status, output = self._run_interactive(
+            ["pwsh", "-NoProfile", "-File", str(POWERSHELL_INSTALLER),
+             "-AssetDirectory", str(self.assets)],
+            [("Client ID:", "\x04")],
+        )
+
+        self.assertNotEqual(status, 0)
+        self.assertIn("after 3 attempts", output)
+        self.assertFalse((self.project / ".agents").exists())
+        self.assertEqual(list(self.tempfiles.iterdir()), [])
+
     def test_posix_refuses_existing_destination_without_update(self) -> None:
         destination = self.project / ".agents" / "skills" / "deep-review"
         destination.mkdir(parents=True)
