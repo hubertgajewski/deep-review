@@ -13,67 +13,79 @@ Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep
 
 ## Install from a release
 
-These instructions install Deep Review `v1.1.0` for Codex at user scope. They do not pipe downloaded code into a shell: download the installer and checksum, verify them, and then run the local file.
+Paste the three commands for your operating system. The installer asks which AI client you use, whether to install for your user or the current project, and confirms the exact destination before downloading the package or changing files. It does not default to any client.
 
-### Linux and macOS
-
-Download these two files into the same directory:
-
-- [`deep-review-install.sh`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.sh)
-- [`deep-review-install.sh.sha256`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.sh.sha256)
-
-Open a terminal in that directory and run:
+### Linux
 
 ```bash
-if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum -c deep-review-install.sh.sha256
-else
-  shasum -a 256 -c deep-review-install.sh.sha256
-fi
-sh ./deep-review-install.sh --client codex --scope user --version v1.1.0
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && sha256sum -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" )
 ```
 
-Continue only when the checksum command prints `deep-review-install.sh: OK`.
+### macOS
+
+```bash
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && shasum -a 256 -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" )
+```
+
+The second command must print `deep-review-install.sh: OK`. Because the commands are joined with `&&`, a failed download or checksum prevents the installer from running.
 
 ### Windows PowerShell
 
-Download these two files into the same directory:
-
-- [`deep-review-install.ps1`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.ps1)
-- [`deep-review-install.ps1.sha256`](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.0/downloads/deep-review/v1.1.0/deep-review-install.ps1.sha256)
-
-Open PowerShell in that directory and run:
-
 ```powershell
-$expected = ((Get-Content .\deep-review-install.ps1.sha256 -TotalCount 1) -split '\s+')[0]
-$actual = (Get-FileHash .\deep-review-install.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actual -cne $expected) { throw "Installer checksum verification failed" }
-.\deep-review-install.ps1 -Client codex -Scope User -Version v1.1.0
+& { $ErrorActionPreference = "Stop"; $installDir = Join-Path ([System.IO.Path]::GetTempPath()) ("deep-review-install-" + [guid]::NewGuid()); New-Item -ItemType Directory -Path $installDir | Out-Null; try { Invoke-WebRequest https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.ps1 -OutFile (Join-Path $installDir "deep-review-install.ps1"); Invoke-WebRequest https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.ps1.sha256 -OutFile (Join-Path $installDir "deep-review-install.ps1.sha256")
+$expected = ((Get-Content (Join-Path $installDir "deep-review-install.ps1.sha256") -TotalCount 1) -split '\s+')[0]; if ((Get-FileHash (Join-Path $installDir "deep-review-install.ps1") -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "Installer checksum verification failed" }
+& (Join-Path $installDir "deep-review-install.ps1") } finally { Remove-Item -Recurse -Force -LiteralPath $installDir -ErrorAction SilentlyContinue } }
 ```
 
-The installer reports the installed version, destination, checksum, and first review
-command. It stops without changing files if the destination or one of its
-client-directory parents is a symbolic link or Windows reparse point.
+PowerShell stops if either download or the checksum check fails. On every platform, the installer reports the installed version, destination, checksum, and first review command.
 
-### Install for another client or project
+## Automated installation
 
-Change only these installer arguments:
+Non-interactive environments must provide a client and scope; the installer never guesses. The release version is built into the installer, while `--version`/`-Version` remains available for pinned automation and testing.
 
 | Argument | Values | Meaning |
 | --- | --- | --- |
 | Client | `codex`, `claude-code`, `cline`, `grok`, `junie`, `kiro`, `mistral`, `qwen`, or a shared-directory client listed below | Selects the client's skill directory. |
 | Scope | `user`/`User` or `project`/`Project` | Installs for your account or the current repository. |
-| Version | An exact release such as `v1.1.0` | Selects immutable versioned assets. |
+| Version | An exact release such as `v1.1.1` | Optional override selecting immutable versioned assets. |
 
 For example, a Claude Code project installation uses:
 
 ```bash
-sh ./deep-review-install.sh --client claude-code --scope project --version v1.1.0
+sh ./deep-review-install.sh --client claude-code --scope project
 ```
 
 ```powershell
-.\deep-review-install.ps1 -Client claude-code -Scope Project -Version v1.1.0
+.\deep-review-install.ps1 -Client claude-code -Scope Project
 ```
+
+### Manual download
+
+If command-line downloads are unavailable, open the [`v1.1.1` Release](https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1) and save all four files for your operating system in one directory:
+
+- Linux and macOS: `deep-review-install.sh`, `deep-review-install.sh.sha256`, `deep-review-v1.1.1.tar.gz`, and `deep-review-v1.1.1.tar.gz.sha256`.
+- Windows: `deep-review-install.ps1`, `deep-review-install.ps1.sha256`, `deep-review-v1.1.1.zip`, and `deep-review-v1.1.1.zip.sha256`.
+
+Return to the user home or project directory where installation should be resolved, then verify and run the downloaded files. On Linux use:
+
+```bash
+(cd /path/to/downloads && sha256sum -c deep-review-install.sh.sha256) &&
+sh /path/to/downloads/deep-review-install.sh --asset-dir /path/to/downloads
+```
+
+On macOS, replace `sha256sum -c` with `shasum -a 256 -c`. On Windows PowerShell use:
+
+```powershell
+$assets = "C:\path\to\downloads"; $installer = Join-Path $assets "deep-review-install.ps1"; $expected = ((Get-Content (Join-Path $assets "deep-review-install.ps1.sha256") -TotalCount 1) -split '\s+')[0]
+if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "Installer checksum verification failed" }
+& $installer -AssetDirectory $assets
+```
+
+The installer verifies the package checksum again before changing the destination. Do not run either installer unless its own checksum verification succeeds.
 
 ## Choose where to install
 
@@ -263,14 +275,30 @@ Local and path reviews require a secure-open adapter that anchors mutable reads 
 
 ## Updating
 
-Download and verify the new release installer and checksum using the installation steps above, then add the update option:
+Use the complete block for your operating system so the freshly downloaded and verified installer receives the update option before its private temporary copy is removed.
+
+### Linux update
 
 ```bash
-sh ./deep-review-install.sh --client codex --scope user --version v1.1.0 --update
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && sha256sum -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" --update )
 ```
 
+### macOS update
+
+```bash
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && shasum -a 256 -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" --update )
+```
+
+### Windows PowerShell update
+
 ```powershell
-.\deep-review-install.ps1 -Client codex -Scope User -Version v1.1.0 -Update
+& { $ErrorActionPreference = "Stop"; $installDir = Join-Path ([System.IO.Path]::GetTempPath()) ("deep-review-install-" + [guid]::NewGuid()); New-Item -ItemType Directory -Path $installDir | Out-Null; try { Invoke-WebRequest https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.ps1 -OutFile (Join-Path $installDir "deep-review-install.ps1"); Invoke-WebRequest https://gitlab.com/hubertgajewski-ai/deep-review/-/releases/v1.1.1/downloads/deep-review-install.ps1.sha256 -OutFile (Join-Path $installDir "deep-review-install.ps1.sha256")
+$expected = ((Get-Content (Join-Path $installDir "deep-review-install.ps1.sha256") -TotalCount 1) -split '\s+')[0]; if ((Get-FileHash (Join-Path $installDir "deep-review-install.ps1") -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "Installer checksum verification failed" }
+& (Join-Path $installDir "deep-review-install.ps1") -Update } finally { Remove-Item -Recurse -Force -LiteralPath $installDir -ErrorAction SilentlyContinue } }
 ```
 
 The installer verifies and stages the complete new package before changing the destination. If activation fails, it restores the previous installation. It never merges old and new package files.
@@ -287,14 +315,4 @@ Never automatically pull an unreviewed default branch into a trusted skill direc
 
 ## Offline installation
 
-Download the versioned archive and checksum from the same GitLab Release on a connected machine and move both files to one local directory. Then run the installer with that directory:
-
-```bash
-sh ./deep-review-install.sh --client codex --scope user --version v1.1.0 --asset-dir /path/to/assets
-```
-
-```powershell
-.\deep-review-install.ps1 -Client codex -Scope User -Version v1.1.0 -AssetDirectory C:\path\to\assets
-```
-
-Offline mode still verifies the archive checksum and package version before changing the destination.
+Follow [Manual download](#manual-download). It lists all four files to transfer, verifies the installer, and runs it with the downloaded package. The installer verifies the package checksum and version before changing the destination. For an update, add `--update` on Linux or macOS, or `-Update` on Windows.

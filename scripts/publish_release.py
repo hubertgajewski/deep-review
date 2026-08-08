@@ -222,7 +222,7 @@ class GitLabClient:
         _, release = self.json_request("GET", release_path, allow_not_found=True)
         description = self._release_description(tag, project_url)
         if release is None:
-            links = [self._link_payload(tag, path, url) for path, url in assets]
+            links = [self._link_payload(path, url) for path, url in assets]
             _, created = self.json_request(
                 "POST",
                 f"/projects/{self.project}/releases",
@@ -250,7 +250,7 @@ class GitLabClient:
         }
         links_path = f"{release_path}/assets/links"
         for path, url in assets:
-            payload = self._link_payload(tag, path, url)
+            payload = self._link_payload(path, url)
             current = by_name.get(path.name)
             if current is None:
                 self.json_request("POST", links_path, payload=payload)
@@ -267,72 +267,50 @@ class GitLabClient:
         )
 
     @staticmethod
-    def _link_payload(tag: str, path: Path, url: str) -> dict[str, str]:
+    def _link_payload(path: Path, url: str) -> dict[str, str]:
         return {
             "name": path.name,
             "url": url,
-            "direct_asset_path": f"/deep-review/{tag}/{path.name}",
+            "direct_asset_path": f"/{path.name}",
             "link_type": "package",
         }
 
     @staticmethod
     def _release_description(tag: str, project_url: str) -> str:
-        release = f"{project_url}/-/releases/{tag}/downloads/deep-review/{tag}"
+        release = f"{project_url}/-/releases/{tag}/downloads"
         return f"""Deep Review {tag}
 
 ## Install
 
-These commands install Deep Review for Codex at user scope. Replace `codex` with another installer client ID or change `user` to `project` when needed. The [installation guide]({project_url}/-/blob/{tag}/docs/installation.md) lists every supported client and destination.
+Paste the three commands for your operating system. The installer asks which AI client and scope to use and shows the destination before changing anything. It does not default to any client.
 
-Do not pipe a downloaded installer into a shell. The commands keep it as a file and verify its checksum before running it.
-
-### Linux and macOS
-
-Downloads: [`deep-review-install.sh`]({release}/deep-review-install.sh) and [`deep-review-install.sh.sha256`]({release}/deep-review-install.sh.sha256)
+### Linux
 
 ```bash
-(
-set -eu
-install_directory="$(mktemp -d)"
-trap 'rm -rf "$install_directory"' EXIT HUP INT TERM
-cd "$install_directory"
-version={tag}
-release="{release}"
-curl --fail --location --remote-name "$release/deep-review-install.sh" --remote-name "$release/deep-review-install.sh.sha256"
-if command -v sha256sum >/dev/null 2>&1; then sha256sum -c deep-review-install.sh.sha256; else shasum -a 256 -c deep-review-install.sh.sha256; fi
-sh ./deep-review-install.sh --client codex --scope user --version "$version"
-)
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" {release}/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" {release}/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && sha256sum -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" )
+```
+
+### macOS
+
+```bash
+( set -eu; install_dir="$(mktemp -d)"; trap 'rm -rf "$install_dir"' EXIT HUP INT TERM; curl --fail --fail-early --location --proto '=https' --tlsv1.2 --output "$install_dir/deep-review-install.sh" {release}/deep-review-install.sh --output "$install_dir/deep-review-install.sh.sha256" {release}/deep-review-install.sh.sha256 &&
+(cd "$install_dir" && shasum -a 256 -c deep-review-install.sh.sha256) &&
+sh "$install_dir/deep-review-install.sh" )
 ```
 
 The checksum command must print `deep-review-install.sh: OK` before the installer runs.
 
 ### Windows PowerShell
 
-Downloads: [`deep-review-install.ps1`]({release}/deep-review-install.ps1) and [`deep-review-install.ps1.sha256`]({release}/deep-review-install.ps1.sha256)
-
 ```powershell
-& {{
-$ErrorActionPreference = "Stop"
-$version = "{tag}"
-$release = "{release}"
-$installDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("deep-review-install-" + [guid]::NewGuid())
-New-Item -ItemType Directory -Path $installDirectory | Out-Null
-try {{
-    $installer = Join-Path $installDirectory "deep-review-install.ps1"
-    $checksum = Join-Path $installDirectory "deep-review-install.ps1.sha256"
-    Invoke-WebRequest "$release/deep-review-install.ps1" -OutFile $installer -ErrorAction Stop
-    Invoke-WebRequest "$release/deep-review-install.ps1.sha256" -OutFile $checksum -ErrorAction Stop
-    $expected = ((Get-Content $checksum -TotalCount 1) -split '\\s+')[0]
-    if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) {{ throw "Installer checksum verification failed" }}
-    & $installer -Client codex -Scope User -Version $version
-}}
-finally {{
-    Remove-Item -Recurse -Force -LiteralPath $installDirectory -ErrorAction SilentlyContinue
-}}
-}}
+& {{ $ErrorActionPreference = "Stop"; $installDir = Join-Path ([System.IO.Path]::GetTempPath()) ("deep-review-install-" + [guid]::NewGuid()); New-Item -ItemType Directory -Path $installDir | Out-Null; try {{ Invoke-WebRequest {release}/deep-review-install.ps1 -OutFile (Join-Path $installDir "deep-review-install.ps1"); Invoke-WebRequest {release}/deep-review-install.ps1.sha256 -OutFile (Join-Path $installDir "deep-review-install.ps1.sha256")
+$expected = ((Get-Content (Join-Path $installDir "deep-review-install.ps1.sha256") -TotalCount 1) -split '\\s+')[0]; if ((Get-FileHash (Join-Path $installDir "deep-review-install.ps1") -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) {{ throw "Installer checksum verification failed" }}
+& (Join-Path $installDir "deep-review-install.ps1") }} finally {{ Remove-Item -Recurse -Force -LiteralPath $installDir -ErrorAction SilentlyContinue }} }}
 ```
 
-PowerShell stops before installation if the checksum does not match.
+PowerShell stops before installation if a download fails or the checksum does not match. See the [installation guide]({project_url}/-/blob/{tag}/docs/installation.md) for automation, updates, and offline installation.
 """
 
 

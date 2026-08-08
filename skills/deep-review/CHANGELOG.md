@@ -4,6 +4,17 @@ All notable changes to the Deep Review plugin are documented in this file. Relea
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-07
+
+### Changed
+
+- Replaced client-specific installation examples with a client-neutral, verified
+  three-command flow for Linux, macOS, and Windows.
+- Added guided client and scope selection with destination confirmation while
+  preserving fail-closed, prompt-free automation through explicit arguments.
+- Shortened GitLab Release asset paths and embedded the release version in both
+  installers so interactive users no longer need to provide it.
+
 ## [1.1.0] - 2026-08-07
 
 ### Added
