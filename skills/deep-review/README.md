@@ -16,7 +16,7 @@ On Claude Code 2.1.216 and newer, `/deep-review --base main` is also available w
 
 ## Requirements and documentation
 
-Deep Review requires Git. Python 3 optionally enables deterministic cache and result-processing helpers; remote review requires the authenticated provider CLI.
+Deep Review requires Git. Python 3 optionally enables deterministic cache, result-processing, and quota-enforced remote-fetch helpers; remote review requires the authenticated provider CLI.
 
 - [Quick start and usage](https://gitlab.com/hubertgajewski-ai/deep-review)
 - [Installation and trust model](https://gitlab.com/hubertgajewski-ai/deep-review/-/blob/main/docs/installation.md)

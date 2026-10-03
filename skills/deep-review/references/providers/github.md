@@ -8,13 +8,13 @@ Fetch the first metadata snapshot:
 gh pr view "$NUMBER" --repo "$REPOSITORY" --json number,title,body,baseRefName,baseRefOid,headRefName,headRefOid,url
 ```
 
-Validate the base branch before asking the shared Remote evidence transport to fetch metadata for `refs/heads/$BASE_BRANCH` and `refs/pull/$NUMBER/head` into its isolated blobless store:
+Validate the base branch before asking the shared Remote evidence transport to fetch metadata for `refs/heads/$BASE_BRANCH` and `refs/pull/$NUMBER/head` into its isolated blobless store through the path chosen by its shared Transport quota preflight:
 
 ```bash
 git check-ref-format --branch "$BASE_BRANCH"
 ```
 
-Require the fetched head ref to resolve exactly to the first snapshot's `headRefOid`. Resolve `git merge-base "$BASE_SHA" "$HEAD_SHA"` to a full commit ID and use its tree as the effective diff base. Apply the shared Remote evidence transport to the verified immutable range `"$BASE_SHA...$HEAD_SHA"`; never use a change-number-based patch as review evidence. Immediately fetch metadata again with the same `gh pr view` command and require `baseRefOid` and `headRefOid` to match the first snapshot. If metadata materialization, merge-base resolution, bounded raw-blob retrieval, or either identity check fails, discard the scope and retry the complete metadata-object-path-preflight-diff-metadata sequence once. Any path-preflight rejection terminates immediately without content retrieval. A safety-ceiling failure does the same. A second mismatch fails scope resolution as a concurrently changing pull request. Normalize title, body, branches, identities, and URL from the verified second snapshot.
+Require the fetched head ref to resolve exactly to the first snapshot's `headRefOid`. Resolve `git merge-base "$BASE_SHA" "$HEAD_SHA"` to a full commit ID and use its tree as the effective diff base. Apply the shared Remote evidence transport to the verified immutable range `"$BASE_SHA...$HEAD_SHA"`; never use a change-number-based patch as review evidence. Immediately fetch metadata again with the same `gh pr view` command and require `baseRefOid` and `headRefOid` to match the first snapshot. If metadata materialization, merge-base resolution, bounded raw-blob retrieval, or either identity check fails, discard the scope and retry the complete metadata-object-path-preflight-diff-metadata sequence once. Any path-preflight rejection terminates immediately without content retrieval. A safety-ceiling failure does the same, including a crossed transport quota. A retry keeps the selected transport path and never replaces a failed bounded fetch with standard Git. A second mismatch fails scope resolution as a concurrently changing pull request. Normalize title, body, branches, identities, and URL from the verified second snapshot.
 
 Validate the number as digits, both recorded identities as full object IDs, and the base branch with `git check-ref-format --branch`. Resolve the remote only from trusted configuration. Pass every value as a separately quoted argument; do not interpolate contributor-controlled text into a shell program.
 

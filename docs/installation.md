@@ -7,7 +7,7 @@ Deep Review is an [Agent Skill](https://agentskills.io) packaged in `skills/deep
 - **Linux and macOS:** `curl`, `tar`, and either `sha256sum` or `shasum`.
 - **Windows:** PowerShell 7.
 - **Git is required to run Deep Review** and resolve repository review scopes.
-- **Python 3 is optional.** It enables the bundled deterministic cache and result-processing helpers; Deep Review can still review without persistent reuse when those helpers are unavailable.
+- **Python 3 is optional.** It enables the bundled deterministic cache and result-processing helpers. With Python 3.10 or newer and Git 2.31 or newer, it also enables quota-enforced remote metadata fetching. Deep Review can still review without persistent reuse or transport quotas when those helpers are unavailable.
 - **Remote review needs the provider CLI.** Authenticate `gh` for `--github-pr` or `glab` for `--gitlab-mr` before invoking the skill.
 - **The AI client must support Agent Skills** and the filesystem guarantees described under [Runtime host requirements](#runtime-host-requirements).
 
@@ -272,6 +272,13 @@ Administrator paths are product- and operating-system-specific. Do not derive th
 ## Runtime host requirements
 
 Local and path reviews require a secure-open adapter that anchors mutable reads to the repository root, rejects symlink or Windows reparse-point traversal, verifies file identity, and proves containment. Remote reviews apply the same guarantees to their immutable snapshot. If the host cannot establish them, Deep Review fails scope resolution or reports required evidence as incomplete rather than silently weakening the boundary.
+
+Remote reviews choose a metadata-fetch transport before fetching and report it:
+
+- `transport quotas: enforced` means the bundled `scripts/bounded_fetch.py` helper fetched commit and tree metadata. It enforced at most 64 MiB of compressed input, 256 MiB of expanded commit/tree objects, and 320 MiB of isolated-store disk use. It requires Python 3.10 or newer, Git 2.31 or newer, an `https://` or `file://` remote, and a server offering Git protocol v2 with partial-clone filtering. HTTPS fetches use Git's configured credentials.
+- `transport quotas: unavailable; using standard Git` means the helper, a compatible Python, or one of those capabilities was unavailable, for example with an SSH remote. Ordinary Git fetched the metadata without those three ceilings. The review continues and is not incomplete for that reason alone.
+
+On both paths, repository isolation, immutable identity checks, blob-free filtering, path preflight, evidence size limits, and model-input limits still apply. Authentication and access failures still fail the review. A failed bounded fetch also fails the review and is never retried with ordinary Git. The [scope-resolution contract](../skills/deep-review/references/scope-resolution.md#transport-quota-preflight) defines the exact behavior.
 
 ## Updating
 
