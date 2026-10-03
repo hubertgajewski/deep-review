@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" role="img" aria-labelledby="title desc">
+  <title id="title">Deep Review project avatar</title>
+  <desc id="desc">Nested code brackets converge on a teal decision diamond.</desc>
+
+  <rect width="192" height="192" rx="42" fill="#0B1220"/>
+  <rect x="4" y="4" width="184" height="184" rx="38" fill="none" stroke="#1E293B" stroke-width="8"/>
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M68 45 31 96l37 51" stroke="#4F6B90" stroke-width="12"/>
+    <path d="m124 45 37 51-37 51" stroke="#4F6B90" stroke-width="12"/>
+
+    <path d="M82 65 59 96l23 31" stroke="#93C5FD" stroke-width="12"/>
+    <path d="m110 65 23 31-23 31" stroke="#93C5FD" stroke-width="12"/>
+  </g>
+
+  <path d="m96 80 16 16-16 16-16-16z" fill="#2DD4BF"/>
+</svg>
