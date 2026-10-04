@@ -36,7 +36,7 @@ The files under `skills/deep-review/references/` are normative. Update them and 
 
 `skills/deep-review/` is the canonical vendor-neutral Agent Skill and the Claude plugin root. Keep Claude-specific metadata additive: do not move, rename, or duplicate `SKILL.md`, `references/`, or `scripts/` to prepare a marketplace release. OpenAI or another distributor may add its own manifest later while packaging the same skill.
 
-The public plugin name `deep-review` is immutable after publication. Treat `skills/deep-review/.claude-plugin/plugin.json` as the authoritative explicit version. Before every release:
+The public plugin name `hg-deep-review` is immutable after publication. If directory validation blocks that name before first publication, change only the plugin id to `hubertgajewski-deep-review` in the manifest, qualified command examples, and package tests. Keep the skill name `deep-review`, display name `Deep Review`, and plugin root `skills/deep-review/` unchanged. Treat `skills/deep-review/.claude-plugin/plugin.json` as the authoritative explicit version. Before every release:
 
 `release-contract.json` is the versioned source of truth for installer client destinations and required release-asset names. The POSIX and PowerShell installers contain generated copies of the client table because they must choose a destination before downloading the package; contract tests require both copies to match exactly. The publisher discovers its complete asset roster from this contract instead of duplicating the list in CI arguments.
 
@@ -61,7 +61,7 @@ The public plugin name `deep-review` is immutable after publication. Treat `skil
    claude --plugin-dir ./skills/deep-review
    ```
 
-   In the new session, confirm `/deep-review:deep-review` is available, run it against a small known diff, and verify that the review reaches a documented terminal state. On Claude Code 2.1.216 and newer, also confirm the `/deep-review` convenience alias when no conflicting command is installed.
+   In the new session, confirm `/hg-deep-review:deep-review` is available, run it against a small known diff, and verify that the review reaches a documented terminal state. On Claude Code 2.1.216 and newer, also confirm the `/deep-review` short alias when no other installed command has that name.
 
 7. Review the complete release diff and merge it to `main`. In GitLab, protect the `v*` tag pattern so only maintainers can create release tags. After explicit release authorization, fetch the merged state, derive the version from the manifest, and tag that exact commit—never an unmerged feature branch:
 
@@ -76,6 +76,6 @@ The public plugin name `deep-review` is immutable after publication. Treat `skil
 
 9. After preparation succeeds, `publish_release` automatically uploads those exact artifacts to the GitLab generic package registry and creates or updates the GitLab Release. The package-registry copies do not inherit the CI artifact's 30-day expiry. Publication is idempotent: an identical asset is reused, while an attempt to change an existing version's bytes fails. At the owning group, turn off **Settings > Packages and registries > Generic > Allow duplicates** and leave the exceptions box empty. Restrict package deletion to the smallest maintainer group, and keep the project's package cleanup policy disabled so release assets are not removed automatically. Confirm those settings and all eight Release links before announcing the release.
 
-10. Submit or update the plugin through the [Claude Console submission form](https://platform.claude.com/plugins/submit). Identify the repository as `https://gitlab.com/hubertgajewski-ai/deep-review.git` and the plugin subdirectory as `skills/deep-review`. Record the submission status or resulting `claude-community` catalog link in the release issue. Anthropic currently documents only the in-app submission forms, so this remains an explicit manual maintainer action.
+10. Submit or update the plugin through the [Claude Console submission form](https://platform.claude.com/plugins/submit). Keep `https://gitlab.com/hubertgajewski-ai/deep-review` as the canonical project. The directory portal reads the plugin from GitHub, so identify the submitted repository as `https://github.com/hubertgajewski/deep-review` and the plugin subdirectory as `skills/deep-review`. Record the submission status, including any look-alike hold or block, or the resulting `claude-community` catalog link in the release issue. Anthropic currently documents only the in-app submission forms, so this remains an explicit manual maintainer action.
 
 Do not tag, publish, or submit when the manifest is missing or malformed, package tests fail, the changelog version differs, strict validation emits a warning or error, the package protections above are absent, or the local smoke test does not complete. Treat a tag and its protected generic-package assets as immutable release identities; fix a bad release with a new version. Marketplace review and publication are external post-merge steps; do not represent them as completed until they actually occur.

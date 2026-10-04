@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "deep-review",
+  "name": "hg-deep-review",
   "displayName": "Deep Review",
   "version": "1.1.1",
   "description": "Run configurable multi-agent code reviews over local changes, Git refs, repository paths, GitHub pull requests, and GitLab merge requests.",

@@ -59,7 +59,10 @@ class PackageTests(unittest.TestCase):
             manifest["$schema"],
             "https://json.schemastore.org/claude-code-plugin-manifest.json",
         )
-        self.assertEqual(manifest["name"], SKILL.name)
+        # The directory name and skill name stay deep-review. The Claude
+        # plugin id is a separate published identifier.
+        self.assertEqual(manifest["name"], "hg-deep-review")
+        self.assertEqual(SKILL.name, "deep-review")
         self.assertEqual(manifest["displayName"], "Deep Review")
         self.assertRegex(manifest["version"], r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
         self.assertIn("multi-agent code reviews", manifest["description"])
@@ -79,7 +82,8 @@ class PackageTests(unittest.TestCase):
         skill_name = re.search(r"(?m)^name: ([a-z0-9-]+)$", skill_text)
         self.assertIsNotNone(skill_name)
         assert skill_name is not None
-        self.assertEqual(skill_name.group(1), manifest["name"])
+        self.assertEqual(skill_name.group(1), "deep-review")
+        self.assertNotEqual(skill_name.group(1), manifest["name"])
         self.assertEqual(
             [path.relative_to(SKILL) for path in SKILL.rglob("SKILL.md")],
             [Path("SKILL.md")],
@@ -93,8 +97,9 @@ class PackageTests(unittest.TestCase):
 
         packaged_readme = (SKILL / "README.md").read_text(encoding="utf-8")
         for token in (
-            "/deep-review:deep-review --base main",
+            "/hg-deep-review:deep-review --base main",
             "/deep-review --base main",
+            "short alias available when no other installed command has that name",
             "canonical portable skill package",
         ):
             self.assertIn(token, packaged_readme)
@@ -108,13 +113,22 @@ class PackageTests(unittest.TestCase):
         for document in (readme, installation, packaged_readme):
             for token in (
                 "/plugin marketplace add anthropics/claude-plugins-community",
-                "/plugin install deep-review@claude-community",
+                "deep-review@claude-community",
+                "hg-deep-review@claude-community",
             ):
                 self.assertNotIn(token, document)
         self.assertEqual(installation.count("marketplace is planned"), 1)
         for token in (
             "canonical vendor-neutral Agent Skill",
-            "public plugin name `deep-review` is immutable",
+            "public plugin name `hg-deep-review` is immutable",
+            "change only the plugin id to `hubertgajewski-deep-review`",
+            "Keep the skill name `deep-review`",
+            "including any look-alike hold or block",
+            "/hg-deep-review:deep-review",
+            "short alias when no other installed command has that name",
+            "submitted repository as `https://github.com/hubertgajewski/deep-review`",
+            "plugin subdirectory as `skills/deep-review`",
+            "`https://gitlab.com/hubertgajewski-ai/deep-review` as the canonical project",
             "claude plugin validate --strict skills/deep-review",
             "python3 -m unittest discover -s tests -v",
             "claude --plugin-dir ./skills/deep-review",
