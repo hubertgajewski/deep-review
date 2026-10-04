@@ -4,6 +4,20 @@ All notable changes to the Deep Review plugin are documented in this file. Relea
 
 ## [Unreleased]
 
+### Added
+
+- An optional bounded remote-fetch helper that enforces the 64 MiB compressed-input,
+  256 MiB expanded commit/tree, and 320 MiB isolated-store disk quotas while fetching
+  remote metadata over HTTPS or file remotes.
+
+### Changed
+
+- Remote reviews select their metadata transport in one preflight shared by GitHub
+  and GitLab. They report `transport quotas: enforced` or `transport quotas:
+  unavailable; using standard Git` and no longer fail solely because the optional
+  quotas cannot be enforced. A failed bounded fetch is never retried through
+  standard Git.
+
 ## [1.1.1] - 2026-08-07
 
 ### Changed

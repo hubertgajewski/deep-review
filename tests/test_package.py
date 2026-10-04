@@ -23,6 +23,7 @@ class PackageTests(unittest.TestCase):
             "README.md",
             "SKILL.md",
             "agents/openai.yaml",
+            "scripts/bounded_fetch.py",
             "scripts/cache.py",
             "scripts/process_result.py",
             "scripts/result_processing.py",
@@ -664,6 +665,73 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Require status `200`", scope)
         self.assertIn("reject cross-origin redirects", scope)
         self.assertIn("without adapter buffering, decoding, logging", scope)
+
+    def test_remote_transport_quotas_are_optional_and_shared(self) -> None:
+        skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        scope = (SKILL / "references" / "scope-resolution.md").read_text(encoding="utf-8")
+        helper = (SKILL / "scripts" / "bounded_fetch.py").read_text(encoding="utf-8")
+        installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        enforced = "transport quotas: enforced"
+        unavailable = "transport quotas: unavailable; using standard Git"
+
+        self.assertNotIn("If the host cannot enforce these limits", scope)
+        self.assertNotIn("resource adapter that enforces", scope)
+        self.assertNotIn("quota-bounded isolated blobless store", skill)
+        self.assertIn("#### Transport quota preflight", scope)
+        for text in (skill, scope, installation):
+            self.assertIn(enforced, text)
+            self.assertIn(unavailable, text)
+        self.assertIn("scripts/bounded_fetch.py", skill)
+        self.assertIn("Never retry a failed bounded fetch through standard Git", skill)
+        self.assertIn("also print the selected transport quota line", skill)
+        for phrase in (
+            "scripts/bounded_fetch.py probe --remote-url <URL>",
+            "scripts/bounded_fetch.py fetch --remote-url <URL> --store <new-private-path>",
+            "same decision for every provider",
+            "keep it for every retry in the invocation",
+            "Python's presence alone is not evidence",
+            "does not guarantee the three quota ceilings",
+            "That difference alone does not make the review incomplete",
+            "Probe exit `3` is an authentication, network, or repository-access failure",
+            "never downgrade the transport or fall back to local review",
+            "Exit `4` means a transport quota would be crossed",
+            "Never retry a failed bounded operation through standard Git",
+            "A post-fetch size check or ordinary Git wrapped in Python is never reported",
+            "runs `git index-pack` only after the complete pack has passed those checks",
+            "never trigger transport downgrade or local-review fallback",
+            "enforceable body limits",
+        ):
+            self.assertIn(phrase, scope)
+        mandatory = scope.split("Both paths keep", 1)[1].split("\n", 1)[0]
+        for protection in (
+            "consumer-repository isolation", "immutable identity verification",
+            "required `blob:none` filtering", "blob-body rejection", "disabled lazy fetching",
+            "path preflight", "package evidence ceilings", "model-input limits",
+        ):
+            self.assertIn(protection, mandatory)
+
+        for provider in ("github", "gitlab"):
+            text = (SKILL / "references" / "providers" / f"{provider}.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("through the path chosen by its shared Transport quota preflight", text)
+            self.assertIn("including a crossed transport quota", text)
+            self.assertIn("never replaces a failed bounded fetch with standard Git", text)
+
+        for name, quota in (
+            ("COMPRESSED_INPUT_LIMIT", "64 MiB of compressed input"),
+            ("EXPANDED_OBJECT_LIMIT", "256 MiB of expanded commit/tree objects"),
+            ("STORE_DISK_LIMIT", "320 MiB of isolated-store disk use"),
+        ):
+            match = re.search(rf"^{name} = (\d+) \* MIB$", helper, re.MULTILINE)
+            self.assertIsNotNone(match, name)
+            assert match is not None
+            self.assertIn(f"{match.group(1)} MiB of", quota)
+            self.assertIn(quota, scope)
+            self.assertIn(quota, installation)
+        self.assertIn("Python 3 is optional.", installation)
+        self.assertIn("scope-resolution.md#transport-quota-preflight", installation)
+        self.assertNotRegex(helper, r"\[\s*\*?GIT_BASE,\s*\"fetch\"")
 
     def test_configuration_safety_contracts_are_explicit(self) -> None:
         config = (SKILL / "references" / "configuration.md").read_text(encoding="utf-8")

@@ -86,7 +86,7 @@ Follow [Scope resolution](references/scope-resolution.md). Resolve trusted ident
 
 Only after preflight succeeds, build exactly one normalized scope containing mode, provider metadata when remote, title, base branch, repository identity, trusted base, head identity, immutable context root, diff, changed-file manifest, untracked paths, description, focus, and `full_review`.
 
-Print one mode line before dispatch. On failure, emit `Failed at scope resolution: <reason>.` and stop. Never fall back from a requested remote scope to local changes.
+Print one mode line before dispatch; for a remote scope, also print the selected transport quota line. On failure, emit `Failed at scope resolution: <reason>.` and stop. Never fall back from a requested remote scope to local changes.
 
 ### 3. Sanitize values and derive content
 
@@ -97,7 +97,7 @@ Before any dispatch:
 - reject unmerged local index entries, derive mutable candidates without Git worktree diff or filters, retain staged content only by exact stage-0 object identity, and capture local tracked, untracked, and path-mode bodies through a platform secure-open adapter anchored to the repository root;
 - derive local tracked hunks from a tracked-only snapshot, then append retained untracked inputs as independent synthetic additions without rename or copy detection;
 - represent immutable and staged gitlinks from raw mode/object metadata without reading or traversing submodules, and reject unstaged gitlinks that cannot be captured safely;
-- for remote scopes, fetch only commit/tree metadata into a quota-bounded isolated blobless store with lazy fetching disabled, then stream preflight-approved blobs by exact object ID under the package body limits;
+- for remote scopes, select the transport path once through the shared transport quota preflight: fetch through `scripts/bounded_fetch.py` and report `transport quotas: enforced` only when its probe verifies all three metadata-fetch quotas; otherwise report `transport quotas: unavailable; using standard Git` and use ordinary Git. Never retry a failed bounded fetch through standard Git. On either path, fetch only commit/tree metadata into an isolated blobless store with lazy fetching disabled, then stream preflight-approved blobs by exact object ID under the package body limits;
 - after snapshotting, apply normalization, snapshot containment, link-safe opening, and denied-component checks through the same capability-based contract before every surrounding-context or dependency read;
 - apply the package description limit before prompt construction, report original and effective character counts, and hash only the exact sanitized description that will be propagated;
 - entity-encode prompt-frame tag literals inside all interpolated values;
