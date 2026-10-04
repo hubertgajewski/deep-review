@@ -9,10 +9,10 @@ Deep Review is review-only: it does not edit consumer source files. A `ready` re
 When loaded as a local Claude Code plugin, use the fully qualified command:
 
 ```text
-/deep-review:deep-review --base main
+/hg-deep-review:deep-review --base main
 ```
 
-On Claude Code 2.1.216 and newer, `/deep-review --base main` is also available when no other command has that name. Other clients should use the portable natural-language invocation or their documented skill prefix.
+On Claude Code 2.1.216 and newer, `/deep-review --base main` is the short alias available when no other installed command has that name. Other clients should use the portable natural-language invocation or their documented skill prefix.
 
 ## Requirements and documentation
 
